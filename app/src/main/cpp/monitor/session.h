@@ -1,5 +1,6 @@
 #pragma once
 #include "monitor/collector.h"
+#include "monitor/diagnostics.h"
 #include "monitor/hud.h"
 #include <condition_variable>
 #include <functional>
@@ -22,6 +23,8 @@ class Session {
     HudSnapshot hud() const;
     std::string system() const;
     std::string diagnostics(bool game = false) const;
+    /** @brief 在锁内复制最近应用诊断，供 ImGui 选择已离开前台的游戏。 */
+    std::vector<DiagnosticEntry> diagnosticHistory() const;
     std::string rootReport() const;
     void requestRoot();
     void start();
@@ -40,7 +43,8 @@ class Session {
     mutable std::mutex mutex_;
     std::mutex lifecycle_;
     std::condition_variable wake_;
-    std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_, gameDiagnostics_;
+    std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_;
+    DiagnosticHistory diagnosticHistory_;
     std::string rootReport_ = "Not requested. Root access requires an explicit action.";
     Config config_;
     HudSnapshot hud_;

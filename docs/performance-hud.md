@@ -14,7 +14,7 @@ Android 仅保留 `MainActivity.java`、`HudService.java` 两个生命周期桥�
 
 悬浮窗不接收触摸，Android 窗口 alpha 限制为 0.8。ImGui 背景透明度独立可调；渲染使用支持预乘透明度或继承透明度的 Vulkan Surface。不支持透明合成时显示错误并结束会话，不生成假透明的黑色窗口。默认字体使用英文标签；长字段可在 ImGui 诊断页查看完整内容。
 
-高级设置提供 Surface 精确名称、CPU 功耗节点与瓦特换算系数。手机可使用 ImGui 触摸键盘或剪贴板粘贴，不依赖 EditText。**Latest diagnostics / Last game diagnostics** 支持复制完整诊断；返回本应用后保留最后的游戏样本及其采集时间。
+高级设置提供 Surface 精确名称、CPU 功耗节点与瓦特换算系数。手机可使用 ImGui 触摸键盘或剪贴板粘贴，不依赖 EditText。**Latest diagnostics / Last game diagnostics** 支持复制诊断。上次游戏诊断按 Android 用户和包名保留本次运行中最近 8 个应用各自的最新样本（每项最多 64 KiB，超长会标记截断）；切到桌面再返回本应用后，可在 **Captured application / 已采样应用** 中选择游戏包名查看、复制。桌面样本单独存放，已选中的游戏不会随新采样自动切换；进程结束后历史不保留。
 
 配置保存在应用私有 `files/native-hud.conf`，通过临时文件和同目录 rename 发布。首次升级由 C++ 导入旧 `performance_hud` SharedPreferences 的字段、顺序、root 选择和显示设置；之后只使用原生配置。损坏或非法配置采用受限默认值。
 

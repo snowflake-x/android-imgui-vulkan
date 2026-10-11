@@ -11,7 +11,7 @@ set(IMGUI ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui)
 add_library(native_app_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 target_include_directories(native_app_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
 add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp features/performance_hud.cpp
-    monitor/hud.cpp monitor/hud_view.cpp monitor/model.cpp monitor/process.cpp monitor/collector.cpp monitor/graphics_trace.cpp monitor/session.cpp monitor/settings_ui.cpp
+    monitor/hud.cpp monitor/hud_view.cpp monitor/model.cpp monitor/process.cpp monitor/collector.cpp monitor/graphics_trace.cpp monitor/session.cpp monitor/diagnostics.cpp monitor/settings_ui.cpp
     platform/android_bridge.cpp platform/overlay_renderer.cpp platform/system_fonts.cpp
     ui/i18n.cpp ui/navigation.cpp ui/theme.cpp ui/font_catalog.cpp vendor/tinyxml2/tinyxml2.cpp
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp

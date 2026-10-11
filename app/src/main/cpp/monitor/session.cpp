@@ -57,7 +57,14 @@ std::string Session::system() const {
 }
 std::string Session::diagnostics(bool game) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return game ? gameDiagnostics_ : diagnostics_;
+    if (!game)
+        return diagnostics_;
+    const auto &entries = diagnosticHistory_.entries();
+    return entries.empty() ? std::string{} : entries.front().text;
+}
+std::vector<DiagnosticEntry> Session::diagnosticHistory() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return diagnosticHistory_.entries();
 }
 std::string Session::rootReport() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -205,9 +212,7 @@ void Session::collect() {
                 for (const auto &item : values)
                     text << item.first << ": " << item.second << '\n';
                 diagnostics_ = text.str();
-                auto foreground = values.find("foreground_user");
-                if (foreground != values.end())
-                    gameDiagnostics_ = diagnostics_;
+                diagnosticHistory_.record(values, diagnostics_);
             }
         } catch (const std::exception &e) {
             history.reset();

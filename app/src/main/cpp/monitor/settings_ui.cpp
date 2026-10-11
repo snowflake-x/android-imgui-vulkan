@@ -175,10 +175,37 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
         ImGui::TreePop();
     }
     if (ImGui::TreeNode(Label(language, "Last game diagnostics").c_str())) {
-        const auto text = session.diagnostics(true);
-        if (ImGui::Button(Label(language, "Copy game diagnostics").c_str()))
-            ImGui::SetClipboardText(text.c_str());
-        ImGui::TextWrapped(Text(language, "%s"), text.empty() ? Text(language, "No game sample yet") : text.c_str());
+        ImGui::TextWrapped("%s", Text(language, "Keeps the latest sample for each of the 8 most recent applications in this session. After returning from a game, select its package below; desktop samples remain separate."));
+        const auto entries = session.diagnosticHistory();
+        if (entries.empty()) {
+            ImGui::TextUnformatted(Text(language, "No game sample yet"));
+        } else {
+            auto selected = std::find_if(entries.begin(), entries.end(), [&](const auto &entry) {
+                return entry.package == state.diagnosticPackage && entry.user == state.diagnosticUser;
+            });
+            if (selected == entries.end()) {
+                selected = entries.begin();
+                state.diagnosticPackage = selected->package;
+                state.diagnosticUser = selected->user;
+            }
+            const auto selectedLabel = selected->package + " (u" + std::to_string(selected->user) + ")";
+            if (ImGui::BeginCombo(ui::FieldLabel(language, "Captured application").c_str(), selectedLabel.c_str())) {
+                for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
+                    const auto label = entry->package + " (u" + std::to_string(entry->user) + ")";
+                    if (ImGui::Selectable(label.c_str(), entry == selected)) {
+                        selected = entry;
+                        state.diagnosticPackage = entry->package;
+                        state.diagnosticUser = entry->user;
+                    }
+                    if (entry == selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::Button(Label(language, "Copy game diagnostics").c_str()))
+                ImGui::SetClipboardText(selected->text.c_str());
+            ImGui::TextWrapped("%s", selected->text.c_str());
+        }
         ImGui::TreePop();
     }
 }
