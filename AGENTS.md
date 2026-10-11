@@ -25,19 +25,19 @@ bool UpdateSurfaceSize(int width, int height);
 
 - Java 类、公开/受保护方法和 JNI 入口必须有 Javadoc（`/** ... */`），首句说明用途，并按需使用 `@param`、`@return`、`@throws`；不要使用 Javadoc 不支持的 `@brief`、`@note`。
 - Java 文档需说明异步行为、调用线程、并发状态、超时、输出上限及 Activity 销毁行为。
-- 允许采用 Kotlin/JVM 替代 Java；Kotlin 类、公开 API 和 JNI 入口采用 KDoc，不能因为换语言而省略文档。
+- 当前 Android 宿主使用 Kotlin/JVM；Kotlin 类、公开 API 和 JNI 入口采用 KDoc。后续新增 Java 源码仍须采用 Javadoc。
 - Kotlin 迁移时配置与 AGP/Gradle 兼容的 Kotlin Android 插件及一致的 JVM target，保持 Manifest 中的 Activity 全名及 NativeActivity 继承关系。
 - JNI 按 JVM 方法名称和描述符调用。迁移必须保留 `getSystemReport(): String`、`getRootReport(): String`、`requestRootInfo(): Unit`、`showError(String): Unit` 的公开实例方法形态，并保留跨线程可见性、单任务控制和进程清理逻辑。不要把这些入口直接改为 suspend、顶层或 companion 方法。
 
-## C++ 模块扩展
+## C++ 插件扩展
 
-- `main.cpp` 负责 NativeActivity 生命周期、JNI 桥接和 Vulkan/ImGui 帧流程；新业务面板放在 `modules/`，不得继续堆入主循环。
-- 模块实现 `Module`，通过 `ModuleContext` 获取当前帧只读数据及平台服务，自己拥有缓存；模块之间不直接依赖彼此实现，不访问主程序全局变量。
-- 新增模块采用显式工厂和集中注册：在 `module.h` 声明工厂，在 `Dashboard::reset()` 注册，在 CMake 中显式加入源码。禁止依靠全局静态构造函数自动注册。
-- 所有模块在原生渲染线程创建、绘制和销毁；Surface 重建会重新创建模块，清空缓存。模块析构不得依赖 Vulkan/ImGui 上下文，不得保存帧上下文引用或 JNI 的线程局部指针。
-- 模块不得自行开始/提交 ImGui 帧或持有交换链资源。需要 GPU 资源的新功能须先定义渲染器提供的资源生命周期接口。
-- 不得在 draw 中等待子进程、网络或执行长时间采集；耗时任务异步执行，绘制只读取线程安全快照。已有短查询应限频。
-- 新增模块同时补充用途、线程/生命周期说明、构建配置及适当验证；保持现有面板顺序和生命周期行为。
+- 模块化采用 `plugin/` 运行时与 `features/` 内置插件方案，接入方式和生命周期以 `docs/cpp-plugins.md` 为准；不要恢复已移除的 `modules/Module`、`ModuleContext` 或 `Dashboard` 方案。
+- 新功能通过 `PluginSpec` 显式声明 ID、依赖和 setup，并在宿主集中登记；新增实现须加入 CMake。禁止全局静态构造函数自动注册或绕过依赖访问全局服务。
+- 插件通过类型事件和受检查的服务句柄协作，状态归插件作用域所有。不得保存 `Context&`、跨帧事件引用、JNIEnv 或宿主原始句柄；服务借用只在同步回调中有效。
+- 运行时访问、事件回调、加载和卸载均在所属渲染线程执行；生命周期操作在帧边界、事件分发之外进行。Surface 重建保留宿主启停配置，插件缓存重新初始化。
+- 清理须支持部分初始化和事务回滚，保持 noexcept；先清空插件，再销毁宿主资源。涉及 GPU 资源时须先等待相关 GPU 工作结束。
+- 不在渲染回调中等待子进程或执行耗时采集；后台工作必须先具备宿主管理的取消与等待协议。root 请求保持为显式用户动作。
+- 新增插件须补充用途、依赖、线程和资源生命周期说明，并运行 `app/src/main/cpp/tests` 的相关宿主测试；Android 生命周期、JNI 和 GPU 行为另做设备验证。
 
 ## Git 提交规范（必须严格遵守）
 

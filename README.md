@@ -1,6 +1,6 @@
 # VulkanScope · Android ImGui Vulkan
 
-原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。界面使用英文，避免系统中文字体依赖。
+原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。Android 应用层使用 **Kotlin**，通过 JNI 连接 C++ Vulkan/ImGui 渲染层。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。界面使用英文，避免系统中文字体依赖。
 
 ## 功能
 
@@ -26,9 +26,13 @@ GitHub 临时 runner 的调试签名可能变化，后续构建若提示签名�
 
 ## 本地构建
 
-需要 JDK 17+、Android SDK，首次构建需下载 Gradle/Android 插件。依赖版本：Gradle 8.11.1、AGP 8.9.1、SDK 35、NDK 28.0.13004108、CMake 3.22.1。
+使用最新 LTS **JDK 25**（CI 使用 Temurin 25）和 Android SDK 构建，首次构建需下载 Gradle/Android/Kotlin 插件。依赖版本：Gradle 9.1.0、AGP 8.13.2、Kotlin 2.3.0、SDK 35、NDK 28.0.13004108、CMake 3.22.1。
+
+JDK 25 用于运行 Gradle 和编译工具。为兼容 Android 的 D8/R8 工具链，Java/Kotlin 的 JVM 字节码目标统一保留为 17；可用平台 API 仍受 Android SDK 和 `minSdk = 26` 限制，不代表支持全部 Java 25 API。Android Studio 的 Gradle JDK 也应选择 JDK 25。
 
 ```sh
+export JAVA_HOME=/path/to/jdk-25
+export PATH="$JAVA_HOME/bin:$PATH"
 sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
 export ANDROID_HOME=/path/to/android-sdk
 ./gradlew assembleDebug assembleRelease lintDebug
@@ -39,26 +43,14 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 
 ## 代码结构
 
-- `app/src/main/cpp/main.cpp`：NativeActivity、JNI 桥接、Vulkan、触摸输入与 ImGui 帧生命周期。
-- `app/src/main/cpp/modules/`：统一的 `Module` 接口、`ModuleContext` 帧上下文、`Dashboard` 注册表及设备/GPU/root 独立面板。
-- `app/src/main/java/dev/snowflake/vulkan/MainActivity.java`：屏幕/设备信息与受限 root 查询。
+- `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、宿主面板与生命周期。
+- `app/src/main/cpp/plugin/`：可逆插件内核，管理依赖、类型事件、服务与作用域资源。
+- `app/src/main/cpp/features/`：帧率、设备信息、GPU 信息插件；界面 **Plugins** 可独立启停。
+- [C++ 插件设计与接入](docs/cpp-plugins.md)：参考 DeepSeek harness / Cordis，说明回滚保证、扩展方式和宿主测试。
+- `app/src/main/java/dev/snowflake/vulkan/MainActivity.kt`：Kotlin NativeActivity、屏幕/设备信息与受限 root 查询；保留原生层调用的 JNI 方法名称和签名。
 - `.github/workflows/android.yml`：自动编译、Lint、APK 上传、标签发布。
 - `app/src/main/cpp/vendor/imgui`：固定 Dear ImGui **v1.91.9b**，上游提交 `f5befd2d29e66809cd1110a152e375a7f1981f06`，附 MIT 许可证，构建时无需拉子模块。
 
 ## 真机验收
 
 安装后观察 FPS 与曲线、切换横竖屏、返回桌面再进入、锁屏再恢复；核对系统显示设置中的刷新率。分别验证无 `su`、拒绝授权、允许授权及超时场景。GPU 驱动和 root 管理器行为需要真机验证；CI 构建和 Lint 不替代运行测试。
-
-## 增加 C++ 模块
-
-1. 在 `app/src/main/cpp/modules/` 新建实现文件，继承 `Module` 并实现 `draw(const ModuleContext&)`，参考 `device_module.cpp`。缓存放在模块实例内。
-2. 在 `module.h` 声明返回 `std::unique_ptr<Module>` 的工厂，在 `Dashboard::reset()` 中按显示顺序加入工厂创建的实例。
-3. 在 `CMakeLists.txt` 的 `vulkanscope` 源文件列表加入新文件，执行 `./gradlew assembleDebug assembleRelease lintDebug`。
-
-宿主负责开始/结束 ImGui 帧与 Vulkan 提交，模块只绘制当前窗口中的内容。上下文仅在当次调用有效；模块在 Surface 初始化时创建、销毁时清理，重建后缓存重新初始化。耗时采集通过平台层或专门的后台服务执行，面板读取快照。新增业务面板无需修改 Vulkan 渲染流程。
-
-## Java 与 Kotlin
-
-目前 Android 宿主保留 Java，类和方法使用 Javadoc；C++ 使用 Doxygen。详细开发约束见 `AGENTS.md`。
-
-这里可以换成 **Kotlin/JVM**：Kotlin 可继承 `NativeActivity`，现有 Android API 与 JNI 均可使用，无须改成 Kotlin/Native。迁移需配置 Kotlin Android 插件、统一 JVM target，并保留 JNI 调用的公开实例方法名称和签名（两个返回 String 的报告方法、无参数的 `requestRootInfo()` 和接收 String 的 `showError()`）。同时保留线程可见性、原子防重入、超时和 Activity 销毁时终止进程的行为。Kotlin 文档改用 KDoc；如需统一生成 Java/Kotlin API 文档，可使用 Dokka。迁移后除构建与 Lint，还需验证 JNI 调用和 Surface/Activity 生命周期。
