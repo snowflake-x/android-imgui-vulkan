@@ -16,6 +16,12 @@ int main() {
         require(JsonString("a\n\"\\\t") == "\"a\\u000a\\\"\\\\\\u0009\"");
         require(manager.command("language", "zh-Hans"));
         require(manager.command("autoRoot", "false"));
+        for (int interval : monitor::SampleIntervals) {
+            require(manager.command("interval", std::to_string(interval)));
+            require(session.config().interval == interval);
+        }
+        require(!manager.command("interval", "1"));
+        require(manager.command("interval", "1000"));
         require(session.config().rootDisplay);
         require(!session.config().liveUpdates);
         require(manager.command("liveUpdates", "true"));

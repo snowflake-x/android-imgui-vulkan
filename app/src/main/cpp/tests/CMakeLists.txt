@@ -32,12 +32,12 @@ target_include_directories(performance_hud_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(performance_hud_test PRIVATE Threads::Threads)
 
 add_executable(native_monitor_test native_monitor_test.cpp ../monitor/model.cpp ../monitor/process.cpp
-    ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/diagnostics.cpp ../monitor/hud.cpp)
+    ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/sampler.cpp ../monitor/diagnostics.cpp ../monitor/hud.cpp)
 target_include_directories(native_monitor_test PRIVATE ..)
 target_link_libraries(native_monitor_test PRIVATE Threads::Threads)
 
 add_executable(native_settings_test native_settings_test.cpp ../ui/i18n.cpp ../ui/theme.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
-    ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/diagnostics.cpp ../monitor/hud.cpp
+    ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/sampler.cpp ../monitor/diagnostics.cpp ../monitor/hud.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
 target_include_directories(native_settings_test PRIVATE .. ../vendor/imgui)
@@ -106,14 +106,19 @@ target_include_directories(diagnostic_history_test PRIVATE ..)
 add_executable(manager_test manager_test.cpp ../manager/manager.cpp
     ../features/builtin_plugins.cpp ../features/performance_hud.cpp ../plugin/runtime.cpp
     ../ui/i18n.cpp ../ui/theme.cpp ../monitor/model.cpp ../monitor/process.cpp
-    ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp
+    ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/sampler.cpp
     ../monitor/diagnostics.cpp ../monitor/hud.cpp ../monitor/gpu_memory.cpp ../monitor/gpu_timing.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
 target_include_directories(manager_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(manager_test PRIVATE Threads::Threads)
 
-foreach(test_target manager_test navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
+add_executable(parallel_sampler_test parallel_sampler_test.cpp ../monitor/sampler.cpp ../monitor/collector.cpp
+    ../monitor/model.cpp ../monitor/process.cpp ../monitor/graphics_trace.cpp ../monitor/gpu_memory.cpp ../monitor/gpu_timing.cpp)
+target_include_directories(parallel_sampler_test PRIVATE ..)
+target_link_libraries(parallel_sampler_test PRIVATE Threads::Threads)
+
+foreach(test_target parallel_sampler_test manager_test navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

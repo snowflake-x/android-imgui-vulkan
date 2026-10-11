@@ -1,5 +1,5 @@
 #pragma once
-#include "monitor/collector.h"
+#include "monitor/sampler.h"
 #include "monitor/diagnostics.h"
 #include "monitor/hud.h"
 #include <condition_variable>
@@ -8,11 +8,6 @@
 #include <thread>
 namespace vulkanscope::monitor {
 enum class RootAccess { Unknown, Requesting, Granted, Unavailable };
-struct PlatformSample {
-    Values values;
-    std::string system;
-    bool interactive = true, overlayAllowed = true;
-};
 /** @brief 进程级原生会话；配置/快照受锁保护，采集线程可取消且必须 join 后销毁。 */
 class Session {
   public:
@@ -38,7 +33,10 @@ class Session {
     /** @brief 当前会话的显示后端；配置切换只影响下次启动，不改变运行中的权限判断。 */
     bool rootDisplayActive() const { return rootDisplay_; }
     /** @brief 收起仅改变显示状态；服务在确认通知恢复入口可用后调用。 */
-    void collapse(bool value) { collapsed_ = value; }
+    void collapse(bool value);
+    /** @brief 渲染与通知消费同一发布序号，避免另设刷新速率；等待最多 100ms 以支持取消。 */
+    std::uint64_t displayRevision() const;
+    bool waitForDisplay(std::uint64_t &revision, const std::atomic<bool> &cancelled);
     bool collapsed() const { return collapsed_; }
     void stop();
     void setError(const std::string &error);
@@ -64,7 +62,7 @@ class Session {
     std::string rootReport_ = "Root has not been requested";
     RootAccess rootAccess_ = RootAccess::Unknown;
     Collector::CommandRunner rootRunner_;
-    std::uint64_t rootConfigRevision_ = 0;
+    std::uint64_t rootConfigRevision_ = 0, samplingRevision_ = 0, displayRevision_ = 1;
     bool startupRootAttempted_ = false;
     Config config_;
     HudSnapshot hud_;

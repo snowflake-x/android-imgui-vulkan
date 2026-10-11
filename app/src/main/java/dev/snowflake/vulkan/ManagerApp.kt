@@ -333,8 +333,10 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
         SuperDropdown(title = tr("Position", "显示位置"), selectedIndex = config.optInt("corner"),
             items = listOf(tr("Top left", "左上"), tr("Top right", "右上"), tr("Bottom left", "左下"), tr("Bottom right", "右下")),
             onSelectedIndexChange = { change("corner", it.toString()) })
-        SuperDropdown(title = tr("Sample interval", "采样间隔"), selectedIndex = listOf(500, 1000, 2000).indexOf(config.optInt("interval", 1000)).coerceAtLeast(0),
-            items = listOf("500 ms", "1000 ms", "2000 ms"), onSelectedIndexChange = { change("interval", listOf(500, 1000, 2000)[it].toString()) })
+        Description(tr("All sampling channels use this cadence. Slow system queries remain independent and show their data age; a shorter interval cannot shorten the hardware measurement window.",
+            "所有采集通道按此周期调度。慢查询独立执行并标记数据年龄；缩短间隔不会缩短硬件的测量窗口。"))
+        SuperDropdown(title = tr("Refresh interval", "刷新间隔"), selectedIndex = listOf(250, 500, 1000, 2000, 5000).indexOf(config.optInt("interval", 1000)).coerceAtLeast(0),
+            items = listOf("250 ms", "500 ms", "1000 ms", "2000 ms", "5000 ms"), onSelectedIndexChange = { change("interval", listOf(250, 500, 1000, 2000, 5000)[it].toString()) })
         SuperSwitch(title = tr("Frame history", "帧时间曲线"), checked = config.optBoolean("hudGraph", true), onCheckedChange = { change("hudGraph", it.toString()) })
         SuperSwitch(title = tr("Additional sensors", "附加传感器行"), checked = config.optBoolean("hudExtras"), onCheckedChange = { change("hudExtras", it.toString()) })
     }

@@ -116,7 +116,7 @@ bool Manager::command(const std::string &key, const std::string &value) {
         else if (key == "hudGraph") boolean(c.hudGraph);
         else if (key == "hudExtras") boolean(c.hudExtras);
         else if (key == "interval") {
-            if (value != "500" && value != "1000" && value != "2000") valid = false;
+            if (value != "250" && value != "500" && value != "1000" && value != "2000" && value != "5000") valid = false;
             else c.interval = std::stoi(value);
         } else if (key == "textSize") integer(c.textSize, 10, 24);
         else if (key == "opacity") integer(c.opacity, 20, 100);

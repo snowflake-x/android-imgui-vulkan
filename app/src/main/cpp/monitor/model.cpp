@@ -109,7 +109,7 @@ void ApplyMetricPreset(Config &config, MetricPreset preset) {
 void Config::normalize() {
     managerPlugins &= 7;
     if (language != "system" && language != "en" && language != "zh-Hans") language = "system";
-    if (interval != 500 && interval != 1000 && interval != 2000)
+    if (std::find(SampleIntervals.begin(), SampleIntervals.end(), interval) == SampleIntervals.end())
         interval = 1000;
     textSize = std::clamp(textSize, 10, 24);
     opacity = std::clamp(opacity, 20, 100);

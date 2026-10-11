@@ -532,6 +532,41 @@ void rootDisplayPermission() {
     require(!session.running(), "ordinary overlay still stops after permission revocation");
     session.stop();
 }
+void refreshCadence() {
+    const auto directory = "/tmp/vulkanscope-cadence-" + std::to_string(getpid());
+    std::filesystem::create_directories(directory);
+    {
+        Session session;
+        session.initialize(directory, [] { return PlatformSample{}; });
+        Config config; config.interval = 5000;
+        require(session.configure(config), "save slow cadence");
+        session.start();
+        auto awaitInterval = [&](const std::string &expected) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            for (;;) {
+                auto values = session.hud().values;
+                if (values.count("refresh_interval_ms") && values.at("refresh_interval_ms") == expected) return;
+                require(std::chrono::steady_clock::now() < deadline, "new interval must interrupt old sleep");
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+        };
+        awaitInterval("5000");
+        auto revision = session.displayRevision();
+        std::atomic<bool> cancel{false};
+        require(!session.waitForDisplay(revision, cancel), "completed workers must not publish ahead of chosen cadence");
+        config.interval = 250;
+        require(session.configure(config), "save fast cadence");
+        awaitInterval("250");
+        revision = session.displayRevision();
+        const auto before = std::chrono::steady_clock::now();
+        while (!session.waitForDisplay(revision, cancel))
+            require(std::chrono::steady_clock::now() - before < std::chrono::seconds(1), "publication stopped");
+        const auto elapsed = std::chrono::steady_clock::now() - before;
+        require(elapsed >= std::chrono::milliseconds(150) && elapsed < std::chrono::seconds(1), "publication follows configured cadence");
+        session.stop();
+    }
+    std::filesystem::remove_all(directory);
+}
 void lifecycle() {
     Session session;
     std::atomic<int> calls{0};
@@ -573,6 +608,7 @@ int main() {
         presets();
         processes();
         lifecycle();
+        refreshCadence();
         rootDisplayPermission();
         authorization();
         graphicsAuthorization();

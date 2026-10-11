@@ -77,10 +77,10 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     ImGui::TextWrapped("%s", Text(language, "GPU timing stays off by default and in field presets. Requires supported tracing events; each capture adds about 0.2-1.1 s of sampling time and tracing overhead. SELinux policy is unchanged."));
     ImGui::TextWrapped("%s", Text(language, "GPU time uses ms/batch for hardware execution or ms/window for driver-reported active time. The window fallback includes all processes and apps sharing the application UID. Min/max describe the current capture; the graph shows presentation frame time."));
     ImGui::TextWrapped("%s", Text(language, "GPU shared memory shows main-process KGSL allocations plus proportionally attributed DMA-BUF memory in decimal MB; these allocations use shared system RAM."));
-    const char *intervals[] = {"500 ms", "1000 ms", "2000 ms"};
-    int interval = config.interval == 500 ? 0 : config.interval == 2000 ? 2 : 1;
-    if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Sample interval").c_str(), &interval, intervals, 3)) {
-        config.interval = interval == 0 ? 500 : interval == 2 ? 2000 : 1000;
+    const char *intervals[] = {"250 ms", "500 ms", "1000 ms", "2000 ms", "5000 ms"};
+    int interval = static_cast<int>(std::find(SampleIntervals.begin(), SampleIntervals.end(), config.interval) - SampleIntervals.begin());
+    if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Sample interval").c_str(), &interval, intervals, 5)) {
+        config.interval = SampleIntervals[interval];
         changed = true;
     }
     changed |= ImGui::SliderInt(vulkanscope::ui::FieldLabel(language, "Text size").c_str(), &config.textSize, 10, 24);

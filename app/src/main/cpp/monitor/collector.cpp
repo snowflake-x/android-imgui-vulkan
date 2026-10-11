@@ -39,6 +39,11 @@ static std::vector<std::string> paths(const std::string &pattern) {
     return result;
 }
 CommandResult Collector::root(const std::string &script, int timeout, std::size_t limit) {
+    if (foregroundDeadline_) {
+        const auto left = (foregroundDeadline_ - MonotonicNs()) / 1000000;
+        if (left <= 0) return {false, "", "Foreground query exceeded refresh budget", false};
+        timeout = std::min(timeout, static_cast<int>(left));
+    }
     if (runner_)
         return runner_(script, timeout);
     return RunCommand({"su", "-c", script}, cancel_, timeout, limit);
@@ -60,16 +65,19 @@ void Collector::reset() {
     surfaceCursor_ = 0;
     ticks_.reset();
 }
-Values Collector::sample(const Config &config) {
+void Collector::authorize(const Config &config) {
     if (!config.root) {
         opted_ = authorized_ = false;
         rootError_ = "Root disabled";
     } else if (!opted_) {
-        opted_ = true;
         auto answer = root("id -u", 30000);
+        opted_ = !cancel_;
         authorized_ = answer.success && std::regex_search(answer.output, std::regex("(^|\n)0(\r?\n|$)"));
         rootError_ = authorized_ ? "" : "Root unavailable or denied; disable/re-enable to retry";
     }
+}
+Values Collector::sample(const Config &config) {
+    authorize(config);
     Values values;
     values["root_status"] = authorized_ ? "granted" : rootError_;
     foreground(config, values);
@@ -207,7 +215,7 @@ static std::string ForegroundQueryStatus(const CommandResult &result, bool found
         status += ": " + result.output.substr(0, 512);
     return status;
 }
-void Collector::foreground(const Config &c, Values &v) {
+void Collector::foreground(const Config &c, Values &v, bool identifyOnly) {
     latestFrames_ = {};
     v["graphics_api"] = c.has("graphics_api") ? "N/A (capture cancelled)" : "OFF";
     v["graphics_api_status"] = c.has("graphics_api") ? "cancelled" : "disabled";
@@ -254,44 +262,9 @@ void Collector::foreground(const Config &c, Values &v) {
     }
     v["foreground"] = foreground->package;
     v["foreground_user"] = std::to_string(foreground->user);
-    if (c.has("graphics_api") && !cancel_) {
-        if (traceCleanupFailed_) {
-            v["graphics_api"] = "N/A (trace cleanup failed; restart device before retrying)";
-            v["graphics_api_status"] = "cleanup_failed";
-            v["graphics_api_details"] = "Previous trace cleanup failed; restart device before retrying";
-        } else {
-            v["graphics_api"] = TraceGraphics(foreground->package, foreground->user, cancel_, runner_, &v);
-            traceCleanupFailed_ = v["graphics_api_status"] == "cleanup_failed";
-        }
-    }
-    if (c.has("app_memory")) {
-        v["app_memory"] = "N/A (process RSS unavailable)";
-        auto pids = root("pidof " + Quote(foreground->package));
-        std::istringstream ids(pids.success ? pids.output : "");
-        int pid = 0;
-        for (int attempt = 0; attempt < 16 && ids >> pid && !cancel_; ++attempt) {
-            if (pid <= 0) continue;
-            auto status = root("cat /proc/" + std::to_string(pid) + "/status");
-            if (!status.success) continue;
-            std::istringstream lines(status.output);
-            std::string line;
-            long long uid = -1;
-            double rss = -1;
-            while (std::getline(lines, line)) {
-                if (line.rfind("Uid:", 0) == 0) { std::istringstream field(line.substr(4)); field >> uid; }
-                if (line.rfind("VmRSS:", 0) == 0) {
-                    std::istringstream field(line.substr(6));
-                    double amount; std::string unit;
-                    if (field >> amount >> unit && unit == "kB") rss = amount;
-                }
-            }
-            if (uid >= 0 && uid / 100000 == foreground->user && std::isfinite(rss) && rss >= 0) {
-                v["app_memory_mb"] = Format(rss * 1024 / 1000000, 2);
-                v["app_memory"] = v["app_memory_mb"] + " MB RSS (main process)";
-                break;
-            }
-        }
-    }
+    if (identifyOnly) return;
+    graphics(c, *foreground, v);
+    if (c.has("app_memory")) appMemory(*foreground, v);
     if (!cancel_)
         gpuTelemetry(c, *foreground, v);
     if (!c.has("fps") && !c.has("frame_time") && !c.has("frame_p95") && !c.has("fps_source") &&
@@ -300,6 +273,89 @@ void Collector::foreground(const Config &c, Values &v) {
         return;
     }
     presentation(c, *foreground, v);
+}
+void Collector::graphics(const Config &c, const Foreground &foreground, Values &v) {
+    if (c.has("graphics_api") && !cancel_) {
+        if (traceCleanupFailed_) {
+            v["graphics_api"] = "N/A (trace cleanup failed; restart device before retrying)";
+            v["graphics_api_status"] = "cleanup_failed";
+            v["graphics_api_details"] = "Previous trace cleanup failed; restart device before retrying";
+        } else {
+            v["graphics_api"] = TraceGraphics(foreground.package, foreground.user, cancel_, runner_, &v);
+            traceCleanupFailed_ = v["graphics_api_status"] == "cleanup_failed";
+        }
+    }
+}
+void Collector::appMemory(const Foreground &foreground, Values &v) {
+    v["app_memory"] = "N/A (process RSS unavailable)";
+    auto pids = root("pidof " + Quote(foreground.package));
+    std::istringstream ids(pids.success ? pids.output : "");
+    int pid = 0;
+    for (int attempt = 0; attempt < 16 && ids >> pid && !cancel_; ++attempt) {
+        if (pid <= 0) continue;
+        auto status = root("cat /proc/" + std::to_string(pid) + "/status");
+        if (!status.success) continue;
+        std::istringstream lines(status.output);
+        std::string line;
+        long long uid = -1;
+        double rss = -1;
+        while (std::getline(lines, line)) {
+            if (line.rfind("Uid:", 0) == 0) { std::istringstream field(line.substr(4)); field >> uid; }
+            if (line.rfind("VmRSS:", 0) == 0) {
+                std::istringstream field(line.substr(6));
+                double amount; std::string unit;
+                if (field >> amount >> unit && unit == "kB") rss = amount;
+            }
+        }
+        if (uid >= 0 && uid / 100000 == foreground.user && std::isfinite(rss) && rss >= 0) {
+            v["app_memory_mb"] = Format(rss * 1024 / 1000000, 2);
+            v["app_memory"] = v["app_memory_mb"] + " MB RSS (main process)";
+            break;
+        }
+    }
+}
+/** @brief 仅前台通道确认 root；其他通道接受会话发布的已验证目标。 */
+Values Collector::samplePart(const Config &config, SamplePart part, const Values &target) {
+    if (part == SamplePart::Foreground) {
+        authorize(config);
+        Values values{{"root_status", authorized_ ? "granted" : rootError_}};
+        foregroundDeadline_ = MonotonicNs() + std::max(500, config.interval) * 1000000LL;
+        try { foreground(config, values, true); }
+        catch (...) { foregroundDeadline_ = 0; throw; }
+        foregroundDeadline_ = 0;
+        return values;
+    }
+    const auto rootStatus = target.find("root_status");
+    authorized_ = config.root && rootStatus != target.end() && rootStatus->second == "granted";
+    rootError_ = authorized_ ? "" : "Root unavailable or disabled";
+    latestFrames_ = {};
+    Values values;
+    if (part == SamplePart::Hardware) { hardware(config, values); return values; }
+    const auto package = target.find("foreground"), user = target.find("foreground_user");
+    if (!authorized_ || package == target.end() || user == target.end()) { reset(); return values; }
+    const Foreground foreground{package->second, std::stoi(user->second)};
+    values["foreground"] = package->second;
+    values["foreground_user"] = user->second;
+    switch (part) {
+    case SamplePart::Presentation:
+        if (config.has("fps") || config.has("frame_time") || config.has("frame_p95") || config.has("fps_source") || config.has("surface"))
+            presentation(config, foreground, values);
+        break;
+    case SamplePart::Graphics: graphics(config, foreground, values); break;
+    case SamplePart::Memory: {
+        if (config.has("app_memory")) appMemory(foreground, values);
+        auto c = config; c.enabled["gpu_time"] = false;
+        gpuTelemetry(c, foreground, values); break;
+    }
+    case SamplePart::GpuTime: {
+        auto c = config; c.enabled["gpu_memory"] = false;
+        gpuTelemetry(c, foreground, values); break;
+    }
+    case SamplePart::Engine: engine(config, values); break;
+    default: break;
+    }
+    values.erase("foreground"); values.erase("foreground_user");
+    return values;
 }
 /** @brief GPU 统计与 SurfaceFlinger 独立，读取前后验证同一前台主进程的身份。 */
 void Collector::gpuTelemetry(const Config &c, const Foreground &foreground, Values &v) {

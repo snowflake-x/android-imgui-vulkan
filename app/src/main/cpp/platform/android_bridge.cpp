@@ -33,8 +33,6 @@ void stopRootDisplay() {
     rootDisplayCancel = true;
     if (rootDisplayThread.joinable()) rootDisplayThread.join();
 }
-std::mutex overlayWaitMutex;
-std::condition_variable overlayWake;
 /** @brief 每次采样建立局部引用帧；后台线程离开作用域时自动从 VM 分离。 */
 struct Jni {
     JNIEnv *env = nullptr;
@@ -189,7 +187,6 @@ void initialize(JNIEnv *e, jobject appContext, jstring directory) {
 }
 void stopOverlay() {
     overlayCancel = true;
-    overlayWake.notify_all();
     if (overlayThread.joinable())
         overlayThread.join();
 }
@@ -529,6 +526,10 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSto
 extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeRunning(JNIEnv *, jclass) {
     return monitor::NativeSession().running();
 }
+/** @brief Android 通知与 ImGui 消费同一原生发布序号，不独立重采样。 */
+extern "C" JNIEXPORT jlong JNICALL Java_dev_snowflake_vulkan_HudService_nativeRevision(JNIEnv *, jclass) {
+    return static_cast<jlong>(monitor::NativeSession().displayRevision());
+}
 /** @brief 非阻塞读取原生设置，Android 桥接据此提供通知操作。 */
 extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeLiveUpdates(JNIEnv *, jclass) {
     return monitor::NativeSession().config().liveUpdates;
@@ -548,7 +549,9 @@ extern "C" JNIEXPORT jstring JNICALL Java_dev_snowflake_vulkan_HudService_native
     auto number = [](const std::optional<double> &value, int digits) {
         return value ? monitor::Format(*value, digits) : std::string("--");
     };
-    const auto shortText = h.capturedNs > 0 && h.status.rfind("Last sample:", 0) != 0
+    const auto shortText = h.capturedNs > 0 && h.status.rfind("Last sample:", 0) != 0 &&
+        h.values.find("sample_age_ms_frames") != h.values.end() &&
+        monitor::Number(h.values.at("sample_age_ms_frames")).value_or(1e9) <= c.interval * 2
         ? number(h.fps.current, 0) + " FPS" : std::string("-- FPS");
     const auto target = h.values.find("foreground");
     const auto app = target == h.values.end() ? std::string{} : target->second.substr(0, 256);
@@ -589,7 +592,9 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSur
                 std::lock_guard<std::mutex> lock(ImGuiMutex());
                 renderer.initialize(window, density);
             }
+            std::uint64_t revision = 0;
             while (!overlayCancel) {
+                if (!monitor::NativeSession().waitForDisplay(revision, overlayCancel)) continue;
                 auto config = monitor::NativeSession().config();
                 auto snapshot = monitor::NativeSession().hud();
                 bool visible = monitor::NativeSession().interactive() && !monitor::NativeSession().collapsed();
@@ -604,9 +609,6 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSur
 
                     });
                 }
-                std::unique_lock<std::mutex> lock(overlayWaitMutex);
-                overlayWake.wait_for(lock, std::chrono::milliseconds(100),
-                                     [] { return overlayCancel.load(); });
             }
         } catch (const std::exception &error) {
             monitor::NativeSession().fail(std::string("Overlay renderer failed: ") + error.what());

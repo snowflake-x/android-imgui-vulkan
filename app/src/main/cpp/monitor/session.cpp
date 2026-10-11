@@ -43,9 +43,26 @@ bool Session::configureLocked(Config c) {
         return false;
     }
     if (config_.root != c.root || config_.autoRoot != c.autoRoot) ++rootConfigRevision_;
+    if (config_.root != c.root || config_.interval != c.interval || config_.enabled != c.enabled ||
+        config_.surface != c.surface || config_.powerPath != c.powerPath || config_.powerScale != c.powerScale)
+        ++samplingRevision_;
     config_ = std::move(c);
+    ++displayRevision_;
     wake_.notify_all();
     return true;
+}
+void Session::collapse(bool value) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    collapsed_ = value; ++displayRevision_; wake_.notify_all();
+}
+std::uint64_t Session::displayRevision() const {
+    std::lock_guard<std::mutex> lock(mutex_); return displayRevision_;
+}
+bool Session::waitForDisplay(std::uint64_t &revision, const std::atomic<bool> &cancelled) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    wake_.wait_for(lock, std::chrono::milliseconds(100), [&] { return cancelled || revision != displayRevision_; });
+    if (cancelled || revision == displayRevision_) return false;
+    revision = displayRevision_; return true;
 }
 HudSnapshot Session::hud() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -92,13 +109,14 @@ void Session::gpu(const Values &values) {
 void Session::setError(const std::string &text) {
     std::lock_guard<std::mutex> lock(mutex_);
     report_ = text;
+    ++displayRevision_; wake_.notify_all();
 }
 void Session::fail(const std::string &text) {
     std::lock_guard<std::mutex> lock(mutex_);
     failed_ = true;
     report_ = text;
     cancel_ = true;
-    wake_.notify_all();
+    ++displayRevision_; wake_.notify_all();
 }
 void Session::start(bool rootDisplay) {
     std::lock_guard<std::mutex> lifecycle(lifecycle_);
@@ -115,7 +133,10 @@ void Session::start(bool rootDisplay) {
     rootDisplay_ = rootDisplay;
     cancel_ = false;
     setError("Starting native performance capture...");
-    worker_ = std::thread([this] { collect(); });
+    worker_ = std::thread([this] {
+        try { collect(); }
+        catch (const std::exception &error) { fail(std::string("Sampling workers unavailable: ") + error.what()); }
+    });
 }
 void Session::stop() {
     std::lock_guard<std::mutex> lifecycle(lifecycle_);
@@ -134,6 +155,7 @@ void Session::startSystemInfo() {
         return;
     systemWorker_ = std::thread([this] {
         while (!systemCancel_) {
+            const auto cycleStart = std::chrono::steady_clock::now();
             if (!running() && platform_) {
                 try {
                     auto sample = platform_();
@@ -146,7 +168,10 @@ void Session::startSystemInfo() {
                 }
             }
             std::unique_lock<std::mutex> lock(mutex_);
-            wake_.wait_for(lock, std::chrono::seconds(1), [this] { return systemCancel_.load(); });
+            const auto revision = samplingRevision_;
+            wake_.wait_until(lock, cycleStart + std::chrono::milliseconds(config_.interval), [this, revision] {
+                return systemCancel_.load() || samplingRevision_ != revision;
+            });
         }
     });
 }
@@ -209,6 +234,7 @@ void Session::beginRootRequest(bool diagnostics) {
                 /** @brief 授权期间用户关闭采样或自动申请后，不得由迟到结果重新开启。 */
                 if (granted && !rootCancel_ && revision == rootConfigRevision_ && (diagnostics || config_.autoRoot)) {
                     config_.root = true;
+                    ++samplingRevision_;
                     std::string error;
                     if (!SaveConfig(path_, config_, error)) rootReport_ += "\n" + error;
                 }
@@ -229,65 +255,75 @@ void Session::beginRootRequest(bool diagnostics) {
     });
 }
 void Session::collect() {
-    Collector collector(cancel_, {}, gpuTimingBlocked_, graphicsTracingBlocked_);
+    ParallelSampler sampler([this] {
+        auto platform = platform_ ? platform_() : PlatformSample{};
+        /** @brief 撤销权限立即终止服务，不等待下一个数据发布节拍。 */
+        if (!rootDisplay_ && !platform.overlayAllowed)
+            fail("Overlay permission revoked; stop and grant permission again");
+        return platform;
+    }, gpuTimingBlocked_, graphicsTracingBlocked_);
     HudHistory history;
+    auto next = std::chrono::steady_clock::now();
     while (!cancel_) {
-        const auto cycleStart = std::chrono::steady_clock::now();
-        const auto c = config();
+        Config c;
+        std::uint64_t revision;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            c = config_; revision = samplingRevision_;
+        }
         try {
-            auto platform = platform_ ? platform_() : PlatformSample{};
+            auto sample = sampler.tick(c, revision, MonotonicNs());
+            if (sample.targetChanged) history.reset();
+            auto &platform = sample.platform;
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 interactive_ = platform.interactive;
-                system_ = platform.system;
+                if (!platform.system.empty()) system_ = platform.system;
             }
             if (!rootDisplay_ && !platform.overlayAllowed) {
                 fail("Overlay permission revoked; stop and grant permission again");
                 break;
             }
             if (!platform.interactive) {
-                collector.reset();
                 history.reset();
-                setError("Screen off; sampling paused");
-            } else {
-                auto values = collector.sample(c);
-                gpuTimingBlocked_ = collector.gpuTimingBlocked();
-                graphicsTracingBlocked_ = collector.graphicsTracingBlocked();
-                if (cancel_)
-                    break;
-                for (auto &item : platform.values)
-                    values[item.first] = std::move(item.second);
                 std::lock_guard<std::mutex> lock(mutex_);
-                if (cancel_)
-                    break;
+                hud_ = {}; hud_.status = "Screen off; sampling paused";
+                report_ = hud_.status;
+                ++displayRevision_; wake_.notify_all();
+            } else {
+                auto &values = sample.values;
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (cancel_) break;
                 values.insert(gpu_.begin(), gpu_.end());
-                hud_ = history.update(values, collector.frameSample(), MonotonicNs());
+                hud_ = history.update(values, sample.frames, MonotonicNs());
+                if (!sample.delays.empty()) {
+                    if (!hud_.status.empty()) hud_.status += "; ";
+                    hud_.status += "Delayed: " + sample.delays;
+                }
+                ++displayRevision_; wake_.notify_all();
                 report_ = Report(c, values);
                 std::ostringstream text;
-                text << system_ << "\nSample CLOCK_BOOTTIME ms: " << BootMs() << "\nRoot opt-in: " << c.root
-                     << '\n';
+                text << system_ << "\nSample CLOCK_BOOTTIME ms: " << BootMs() << "\nRoot opt-in: " << c.root << '\n';
                 text << "Enabled fields:";
-                for (const auto &id : c.order)
-                    if (c.has(id))
-                        text << ' ' << id;
+                for (const auto &id : c.order) if (c.has(id)) text << ' ' << id;
                 text << '\n';
-                for (const auto &item : values)
-                    text << item.first << ": " << item.second << '\n';
+                for (const auto &item : values) text << item.first << ": " << item.second << '\n';
                 diagnostics_ = text.str();
                 diagnosticHistory_.record(values, diagnostics_);
             }
         } catch (const std::exception &e) {
-            gpuTimingBlocked_ = collector.gpuTimingBlocked();
-            graphicsTracingBlocked_ = collector.graphicsTracingBlocked();
             history.reset();
-            collector.reset();
             setError(std::string("Native sampling error: ") + e.what());
         }
         std::unique_lock<std::mutex> lock(mutex_);
-        /** @brief interval 表示开始到开始的周期；慢采样只留短暂让步，不再额外叠加完整间隔。 */
-        const auto next = std::max(cycleStart + std::chrono::milliseconds(c.interval),
-                                   std::chrono::steady_clock::now() + std::chrono::milliseconds(50));
-        wake_.wait_until(lock, next, [this] { return cancel_.load(); });
+        /** @brief 固定发布节拍，不等待采样通道；错过周期时跳过，不补发突发任务。 */
+        next += std::chrono::milliseconds(c.interval);
+        if (next <= std::chrono::steady_clock::now()) next = std::chrono::steady_clock::now() + std::chrono::milliseconds(c.interval);
+        wake_.wait_until(lock, next, [this, revision] { return cancel_.load() || samplingRevision_ != revision; });
+        if (samplingRevision_ != revision) next = std::chrono::steady_clock::now();
     }
+    sampler.stop();
+    gpuTimingBlocked_ = sampler.gpuTimingBlocked();
+    graphicsTracingBlocked_ = sampler.graphicsTracingBlocked();
 }
 }

@@ -3,7 +3,8 @@ package dev.snowflake.vulkan
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -26,6 +27,7 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
     val state = mutable.asStateFlow()
     private var visible = true
     private var ready = false
+    private val refreshSignal = Channel<Unit>(Channel.CONFLATED)
 
     init {
         viewModelScope.launch {
@@ -34,10 +36,11 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
                     NativeManager.initialize(application, application.filesDir.absolutePath)
                 }
                 ready = true
-                refresh()
                 while (true) {
-                    delay(750)
+                    val start = android.os.SystemClock.uptimeMillis()
                     if (visible) refresh()
+                    val interval = mutable.value.config.optInt("interval", 1000).coerceIn(250, 5000)
+                    withTimeoutOrNull((interval - (android.os.SystemClock.uptimeMillis() - start)).coerceAtLeast(1)) { refreshSignal.receive() }
                 }
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -46,7 +49,7 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
         }
     }
 
-    fun visible(value: Boolean) { visible = value }
+    fun visible(value: Boolean) { visible = value; refreshSignal.trySend(Unit) }
 
     private suspend fun refresh() {
         val snapshot = withContext(NativeManager.dispatcher) {
@@ -63,6 +66,7 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
                 if (!ok) throw IllegalStateException("Unable to save this setting")
                 mutable.value = mutable.value.copy(error = null)
                 refresh()
+                refreshSignal.trySend(Unit)
             } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 mutable.value = mutable.value.copy(error = error.message)

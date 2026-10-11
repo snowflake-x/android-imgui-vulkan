@@ -28,7 +28,7 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     private boolean rootMode;
     private RootDisplayBroker rootBroker;
     private long rootStartedAt;
-    private long lastNotificationAt;
+    private long lastNotificationRevision = -1;
 
     private Notification notification() {
         try {
@@ -43,10 +43,10 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
 
     private void updateNotification() {
         if (nativeCollapsed() && (!nativeLiveUpdates() || !HudNotification.available(this))) nativeCollapse(false);
-        long now = android.os.SystemClock.uptimeMillis();
-        if (now - lastNotificationAt < 1000) return;
+        long revision = nativeRevision();
+        if (revision == lastNotificationRevision) return;
         getSystemService(NotificationManager.class).notify(HudNotification.ID, notification());
-        lastNotificationAt = now;
+        lastNotificationRevision = revision;
     }
 
     private final Runnable update = new Runnable() {
@@ -66,7 +66,7 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                     stopSelf();
                     return;
                 }
-                handler.postDelayed(this, 500);
+                handler.postDelayed(this, 100);
                 return;
             }
             try {
@@ -87,7 +87,7 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                 stopSelf();
                 return;
             }
-            handler.postDelayed(this, 500);
+            handler.postDelayed(this, 100);
         }
     };
 
@@ -112,7 +112,7 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                     getSystemService(NotificationManager.class).notify(HudNotification.ID, notification());
                     nativeCollapse(true);
                 }
-                lastNotificationAt = 0;
+                lastNotificationRevision = -1;
                 updateNotification();
             } catch (RuntimeException error) { nativeCollapse(false); }
             return START_NOT_STICKY;
@@ -213,6 +213,8 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     private static native boolean nativeRootMode();
     /** Reads the native preference without sampling; called on the service main thread. */
     private static native boolean nativeLiveUpdates();
+    /** Reads the native publication sequence; notification updates follow the selected sampling cadence. */
+    private static native long nativeRevision();
     /** Sets transient native visibility without stopping collection or disposing the Surface. */
     private static native void nativeCollapse(boolean collapsed);
     /** Reads native visibility; also safe from the serialized root Binder callback. */
