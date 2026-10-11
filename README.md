@@ -56,3 +56,9 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 3. 在 `CMakeLists.txt` 的 `vulkanscope` 源文件列表加入新文件，执行 `./gradlew assembleDebug assembleRelease lintDebug`。
 
 宿主负责开始/结束 ImGui 帧与 Vulkan 提交，模块只绘制当前窗口中的内容。上下文仅在当次调用有效；模块在 Surface 初始化时创建、销毁时清理，重建后缓存重新初始化。耗时采集通过平台层或专门的后台服务执行，面板读取快照。新增业务面板无需修改 Vulkan 渲染流程。
+
+## Java 与 Kotlin
+
+目前 Android 宿主保留 Java，类和方法使用 Javadoc；C++ 使用 Doxygen。详细开发约束见 `AGENTS.md`。
+
+这里可以换成 **Kotlin/JVM**：Kotlin 可继承 `NativeActivity`，现有 Android API 与 JNI 均可使用，无须改成 Kotlin/Native。迁移需配置 Kotlin Android 插件、统一 JVM target，并保留 JNI 调用的公开实例方法名称和签名（两个返回 String 的报告方法、无参数的 `requestRootInfo()` 和接收 String 的 `showError()`）。同时保留线程可见性、原子防重入、超时和 Activity 销毁时终止进程的行为。Kotlin 文档改用 KDoc；如需统一生成 Java/Kotlin API 文档，可使用 Dokka。迁移后除构建与 Lint，还需验证 JNI 调用和 Surface/Activity 生命周期。

@@ -14,17 +14,29 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * 提供 NativeActivity 宿主、设备信息和受限的异步 root 诊断。
+ * <p>公开的报告与操作方法由 C++ 通过 JNI 按名称及签名调用，变更时必须同步更新调用方。
+ */
 public class MainActivity extends NativeActivity {
     private volatile String rootReport = "Not requested. Tap the button to request su authorization.";
     private final AtomicBoolean rootBusy = new AtomicBoolean(false);
     private volatile Process rootProcess;
     private volatile boolean destroyed;
 
+    /**
+     * 创建宿主并在前台保持屏幕点亮。
+     * @param state 系统保存的 Activity 状态，首次启动时可为 null
+     */
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
+    /**
+     * 获取系统报告；由原生渲染线程定期读取，不保存可变 Android 对象。
+     * @return 设备、屏幕和内存信息；DPI 等数值以系统报告为准
+     */
     public String getSystemReport() {
         Display display = getWindowManager().getDefaultDisplay();
         DisplayMetrics metrics = new DisplayMetrics();
@@ -42,17 +54,30 @@ public class MainActivity extends NativeActivity {
             + "\nCPU cores: " + Runtime.getRuntime().availableProcessors()
             + "\nRAM available / total: " + memory.availMem / 1048576 + " / " + memory.totalMem / 1048576 + " MiB";
     }
+    /**
+     * 获取后台诊断线程最近发布的文本快照，不等待命令完成。
+     * @return 初始提示、等待状态、诊断输出或错误信息
+     */
     public String getRootReport() { return rootReport; }
+    /**
+     * 将原生层错误投递到 UI 线程显示，然后关闭 Activity。
+     * @param message 面向用户的错误说明
+     */
     public void showError(String message) {
         runOnUiThread(() -> { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); finish(); });
     }
+    /**
+     * 异步请求已有 su 提供者授权并执行固定只读诊断，允许从渲染线程调用。
+     * <p>已销毁或正在执行时忽略请求；命令等待最多 30 秒，保留最多 32 KiB 输出。
+     * 读取线程在达到输出上限后继续排空管道，避免子进程因管道写满而阻塞。
+     */
     public void requestRootInfo() {
         if (destroyed || !rootBusy.compareAndSet(false, true)) return;
         rootReport = "Waiting for su authorization (30 second timeout)...";
         Thread worker = new Thread(() -> {
             Process process = null;
             try {
-                // Fixed read-only commands. No exploitation, arbitrary input, or system changes.
+                /** 固定只读命令，不接受任意输入或修改系统。 */
                 String script = "id; echo '\n--- Kernel ---'; uname -a; "
                     + "echo '\n--- CPU ---'; cat /proc/cpuinfo; "
                     + "echo '\n--- Memory ---'; head -30 /proc/meminfo; "
@@ -97,6 +122,10 @@ public class MainActivity extends NativeActivity {
         worker.setDaemon(true);
         worker.start();
     }
+    /**
+     * 阻止新诊断任务并终止当前 su 进程，再释放 Activity。
+     * <p>后台任务通过 destroyed 标记处理与进程创建并发的销毁操作。
+     */
     @Override public void onDestroy() {
         destroyed = true;
         Process process = rootProcess;
