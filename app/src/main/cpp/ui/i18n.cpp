@@ -73,6 +73,8 @@ constexpr Entry entries[] = {
     {"Swapchain: %u images / FIFO", "交换链：%u 张图像 / FIFO"},
     {"Classic Metal HUD", "经典 Metal HUD"},
     {"Overlay style", "悬浮显示风格"},
+    {"Memory scanner", "内存扫描"},
+    {"Memory scanner description", "读取进程内存，并尝试导出 Unity IL2CPP 类型名称。"},
     {"Frame history graph", "帧历史曲线"},
     {"Additional sensor rows", "附加传感器行"},
     {"Enable root sampling", "启用 Root 采样"},

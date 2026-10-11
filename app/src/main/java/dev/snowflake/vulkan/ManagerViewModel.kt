@@ -63,7 +63,7 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
         viewModelScope.launch {
             try {
                 val ok = withContext(NativeManager.dispatcher) { NativeManager.command(key, value) }
-                if (!ok) throw IllegalStateException("Unable to save this setting")
+                if (!ok) throw IllegalStateException(if (key.startsWith("memory:")) "Cannot start operation: check root, target, input format, and running task" else "Unable to save this setting")
                 mutable.value = mutable.value.copy(error = null)
                 refresh()
                 refreshSignal.trySend(Unit)

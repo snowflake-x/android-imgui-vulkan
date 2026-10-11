@@ -195,3 +195,7 @@ HUD 宿主 `HostPerformanceHud` 可提供可选的 `drawPreview` 同步回调，
 ## Miuix 管理宿主
 
 Android 入口现在使用 Kotlin Compose + Miuix。`manager/Manager` 在专用串行 JNI 工作线程创建和访问 Runtime，按持久化的插件开关加载设备、GPU 和 HUD 插件。配置表单通过经过校验的单字段命令更新 C++ Session；没有将采集搬入 Kotlin。旧的 `RenderFrame` / ImGui 宿主回调保留用于插件示例和宿主测试，当前管理器不发送 UI RenderFrame。HUD 由独立的 C++ Vulkan/ImGui 渲染器绘制。关闭管理 Activity 不停止用户开启的 HUD；显式停止或关闭 HUD 插件会结束采集。
+
+## 内存分析插件
+
+新增可选 memory-scanner，默认关闭，无其他插件依赖。宿主注入 Root 工作进程执行器，插件按作用域管理单工作线程，通过 MemoryAction / MemoryQuery 类型事件交互。卸载及管理界面生命周期结束时取消并等待线程；不影响性能 HUD 会话。扫描、Unity 元数据导出和布局候选解释见 [内存分析说明](memory-scanner.md)。

@@ -9,12 +9,13 @@
 
 namespace vulkanscope {
 namespace {
-constexpr std::array<const char *, 3> ids{"device-info", "gpu-info", "performance-hud"};
-constexpr std::array<const char *, 3> labels{"Screen & device", "Vulkan GPU", "Foreground performance HUD"};
-constexpr std::array<const char *, 3> descriptions{
+constexpr std::array<const char *, 4> ids{"device-info", "gpu-info", "performance-hud", "memory-scanner"};
+constexpr std::array<const char *, 4> labels{"Screen & device", "Vulkan GPU", "Foreground performance HUD", "Memory scanner"};
+constexpr std::array<const char *, 4> descriptions{
     "Screen, device and Android system information.",
     "Vulkan device, driver and supported API information.",
-    "Native foreground performance monitoring and HUD display."};
+    "Native foreground performance monitoring and HUD display.",
+    "Read process memory and attempt Unity IL2CPP type-name export."};
 }
 std::string JsonString(const std::string &value) {
     const char hex[] = "0123456789abcdef";
@@ -26,10 +27,11 @@ std::string JsonString(const std::string &value) {
     }
     return out + '"';
 }
-Manager::Manager(monitor::Session &session) : session_(session) {
+Manager::Manager(monitor::Session &session, MemoryExecutor memory) : session_(session) {
     RegisterBuiltinPlugins(runtime_, std::make_shared<HostReports>([&session] { return session.system(); }));
     RegisterPerformanceHudPlugin(runtime_, std::make_shared<HostPerformanceHud>(
         [&session] { return session.report(); }, [] {}, [] {}, [&session] { session.stop(); }));
+    RegisterMemoryScanner(runtime_, std::move(memory));
     synchronizePlugins();
 }
 void Manager::synchronizePlugins() {
@@ -58,6 +60,7 @@ std::string Manager::snapshot(ui::Language language) {
         << ",\"rootDisplay\":" << (c.rootDisplay ? "true" : "false")
         << ",\"liveUpdates\":" << (c.liveUpdates ? "true" : "false")
         << ",\"hudGraph\":" << (c.hudGraph ? "true" : "false") << ",\"hudExtras\":" << (c.hudExtras ? "true" : "false")
+        << ",\"managerPlugins\":" << c.managerPlugins
         << ",\"hudStyle\":" << text(c.hudStyle)
         << ",\"interval\":" << c.interval << ",\"textSize\":" << c.textSize << ",\"opacity\":" << c.opacity
         << ",\"corner\":" << c.corner << ",\"surface\":" << text(c.surface) << ",\"powerPath\":" << text(c.powerPath)
@@ -92,11 +95,66 @@ std::string Manager::snapshot(ui::Language language) {
         first = false;
         out << "{\"package\":" << text(entry.package) << ",\"user\":" << entry.user << '}';
     }
-    out << "]}";
+    MemoryState memory;
+    runtime_.emit(MemoryQuery{&memory});
+    out << "],\"memory\":{\"busy\":" << (memory.busy ? "true" : "false")
+        << ",\"status\":" << text(memory.status) << ",\"report\":" << text(memory.report)
+        << ",\"processes\":[";
+    first = true;
+    for (const auto &p : memory.processes) {
+        if (!first) out << ',';
+        first = false;
+        out << "{\"pid\":" << p.pid << ",\"start\":" << text(std::to_string(p.start))
+            << ",\"uid\":" << p.uid << ",\"name\":" << text(p.name) << '}';
+    }
+    out << "],\"targetIdentity\":" << text(memory.targetIdentity) << ",\"matches\":[";
+    first = true;
+    for (const auto &address : memory.matches) { if (!first) out << ','; first = false; out << text(address); }
+    out << "],\"viewAddress\":" << text(memory.viewAddress) << ",\"viewHex\":" << text(memory.viewHex)
+        << ",\"changed\":[";
+    first = true;
+    for (auto offset : memory.changed) { if (!first) out << ','; first = false; out << offset; }
+    out << "],\"pointers\":[";
+    first = true;
+    for (const auto &pointer : memory.pointers) {
+        if (!first) out << ',';
+        first = false;
+        out << "{\"address\":" << text(pointer.address) << ",\"label\":" << text(pointer.label) << '}';
+    }
+    out << "]}}";
     return out.str();
 }
 bool Manager::command(const std::string &key, const std::string &value) {
     if (key.size() > 128 || value.size() > 512) return false;
+    if (key.rfind("memory:", 0) == 0) {
+        if (!runtime_.isLoaded("memory-scanner")) return false;
+        MemoryJob job;
+        job.operation = key.substr(7);
+        if (job.operation != "cancel" && session_.rootAccess() != monitor::RootAccess::Granted) return false;
+        if (job.operation == "scan" || job.operation == "unity" || job.operation == "view") {
+            std::istringstream fields(value);
+            std::string encoded, extra;
+            if (!(fields >> job.pid >> job.start >> job.kind >> encoded) || fields >> extra) return false;
+            if (job.operation == "view") {
+                std::size_t addressEnd = 0, sizeEnd = 0;
+                try {
+                    const auto address = std::stoull(job.kind, &addressEnd, 16);
+                    const auto size = std::stoull(encoded, &sizeEnd);
+                    if (!address || job.kind.front() == '-' || addressEnd != job.kind.size() ||
+                        sizeEnd != encoded.size() || size < 16 || size > 4096) return false;
+                } catch (const std::exception &) { return false; }
+                job.input = encoded;
+            } else if (job.operation == "scan") {
+                try {
+                    auto data = memory::Pattern("hex", encoded);
+                    job.input.assign(data.begin(), data.end());
+                } catch (const std::exception &) { return false; }
+            }
+        }
+        bool accepted = false;
+        runtime_.emit(MemoryAction{job, &accepted});
+        return accepted;
+    }
     if (key == "retryRoot") { session_.requestRoot(); return true; }
     bool valid = true;
     const auto saved = session_.updateConfig([&](monitor::Config &c) {
@@ -169,6 +227,9 @@ bool Manager::command(const std::string &key, const std::string &value) {
     if (key == "plugin:performance-hud" && value == "false") session_.stop();
     synchronizePlugins();
     return true;
+}
+void Manager::pauseMemory() {
+    if (runtime_.isLoaded("memory-scanner")) runtime_.unload("memory-scanner");
 }
 std::string Manager::diagnostic(const std::string &package, int user) const {
     if (package.empty()) return session_.diagnostics();

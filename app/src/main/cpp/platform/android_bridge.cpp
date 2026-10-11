@@ -406,9 +406,33 @@ void HudAction(JNIEnv *env, jobject activity, int action) {
         monitor::NativeSession().setError("Android lifecycle action failed");
 }
 namespace {
+/** @brief Capture immutable package paths for bounded root launches; no JNI references escape. */
+MemoryExecutor memoryExecutor() {
+    Jni j;
+    auto *e = j.env;
+    if (!e || !context) return {};
+    auto info = e->CallObjectMethod(context, method(e, context, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;"));
+    if (!info || exception(e)) return {};
+    auto type = e->GetObjectClass(info);
+    auto apkObject = static_cast<jstring>(e->GetObjectField(info, e->GetFieldID(type, "sourceDir", "Ljava/lang/String;")));
+    auto libObject = static_cast<jstring>(e->GetObjectField(info, e->GetFieldID(type, "nativeLibraryDir", "Ljava/lang/String;")));
+    const auto apk = utf(e, apkObject), library = utf(e, libObject) + "/libvulkanscope.so";
+    if (exception(e) || apk.empty()) return {};
+    return [apk, library](const MemoryJob &job, const std::atomic<bool> &cancel) {
+        std::string encoded;
+        constexpr char hex[] = "0123456789abcdef";
+        for (unsigned char c : job.input) { encoded += hex[c >> 4]; encoded += hex[c & 15]; }
+        if (encoded.empty()) encoded = "00";
+        const auto command = "CLASSPATH=" + monitor::Quote(apk) +
+            " exec /system/bin/app_process /system/bin dev.snowflake.vulkan.MemoryProbeBootstrap " +
+            monitor::Quote(library) + " " + monitor::Quote(job.operation) + " " + std::to_string(job.pid) +
+            " " + std::to_string(job.start) + " " + monitor::Quote(job.kind) + " " + monitor::Quote(encoded);
+        return monitor::RunCommand({"su", "-c", command}, cancel, 30000, 512u << 10);
+    };
+}
 /** @brief Kotlin 的进程级单线程调度器持有此宿主，JNI 不执行 ImGui 渲染。 */
 Manager &manager() {
-    static Manager value(monitor::NativeSession());
+    static Manager value(monitor::NativeSession(), memoryExecutor());
     return value;
 }
 /** @brief 使用标准 UTF-8 字节数组避免 JNI Modified UTF-8 损坏系统字体支持的扩展字符。 */
@@ -438,6 +462,16 @@ void readGpuProperties() {
     vkDestroyInstance(instance, nullptr);
 }
 }
+/** @brief Root helper entry without initializing app services, Vulkan, or a manager runtime. */
+extern "C" JNIEXPORT jbyteArray JNICALL Java_dev_snowflake_vulkan_MemoryProbeBootstrap_nativeProbe(
+    JNIEnv *e, jclass, jstring operation, jint pid, jlong start, jstring kind, jstring input) {
+    try {
+        auto decoded = memory::Pattern("hex", utf(e, input));
+        return bytes(e, memory::Probe(utf(e, operation), pid, start, utf(e, kind),
+            std::string(decoded.begin(), decoded.end())));
+    }
+    catch (const std::exception &error) { managerError(e, error); return nullptr; }
+}
 extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_NativeManager_initialize(JNIEnv *e, jobject, jobject c, jstring path) {
     try {
         initialize(e, c, path);
@@ -463,6 +497,7 @@ extern "C" JNIEXPORT jbyteArray JNICALL Java_dev_snowflake_vulkan_NativeManager_
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_NativeManager_pause(JNIEnv *e, jobject) {
     try {
+        manager().pauseMemory();
         monitor::NativeSession().shutdownDiagnostics();
         monitor::NativeSession().stopSystemInfo();
     } catch (const std::exception &error) { managerError(e, error); }

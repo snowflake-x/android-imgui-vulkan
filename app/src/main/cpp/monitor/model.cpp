@@ -107,7 +107,7 @@ void ApplyMetricPreset(Config &config, MetricPreset preset) {
     }
 }
 void Config::normalize() {
-    managerPlugins &= 7;
+    managerPlugins &= 15;
     if (hudStyle != "metal" && hudStyle != "rtss") hudStyle = "metal";
     if (language != "system" && language != "en" && language != "zh-Hans") language = "system";
     if (std::find(SampleIntervals.begin(), SampleIntervals.end(), interval) == SampleIntervals.end())

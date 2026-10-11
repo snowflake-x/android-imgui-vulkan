@@ -34,6 +34,11 @@ int main() {
         require(manager.command("plugin:device-info", "false"));
         require((session.config().managerPlugins & 1u) == 0);
         require(!manager.command("plugin:unknown", "true"));
+        require(manager.command("plugin:memory-scanner", "true"));
+        require((session.config().managerPlugins & 8u) != 0);
+        require(!manager.command("memory:list", ""));
+        require(manager.snapshot(ui::Language::English).find("\"memory\":") != std::string::npos);
+        require(manager.command("plugin:memory-scanner", "false"));
         require(!manager.command("opacity", "101"));
         require(!manager.command("opacity", "NaN"));
         require(!manager.command("root", "yes"));

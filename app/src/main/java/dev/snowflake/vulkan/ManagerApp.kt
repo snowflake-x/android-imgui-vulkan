@@ -69,6 +69,7 @@ internal fun ManagerApp(
                 "settings" -> tr("Global settings", "全局设置")
                 "performance_settings" -> tr("Performance settings", "性能插件设置")
                 "diagnostics" -> tr("Diagnostics", "诊断")
+                "memory_scanner" -> tr("Memory scanner", "内存扫描")
                 "metric_help" -> tr("Metric guide", "指标说明")
                 else -> if (page == 0) "VulkanScope" else tr("Plugins", "插件列表")
             }
@@ -99,7 +100,9 @@ internal fun ManagerApp(
                 val contentPadding = PaddingValues(start = 12.dp, end = 12.dp,
                     top = padding.calculateTopPadding() + 12.dp, bottom = padding.calculateBottomPadding() + 24.dp)
                 val modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection)
-                if (screen == "diagnostics") {
+                if (screen == "memory_scanner") {
+                    MemoryScannerPage(state, change, chinese, modifier, contentPadding)
+                } else if (screen == "diagnostics") {
                     DiagnosticsPage(state, loadDiagnostic, modifier, contentPadding)
                 } else {
                     LazyColumn(modifier = modifier,
@@ -161,6 +164,10 @@ internal fun ManagerApp(
                                             checked = plugin.getBoolean("enabled"),
                                             startAction = { Icon(pluginIcon(plugin.getString("id")), null, tint = MiuixTheme.colorScheme.primary) },
                                             onCheckedChange = { change("plugin:" + plugin.getString("id"), it.toString()) })
+                                        if (plugin.getString("id") == "memory-scanner") {
+                                            TextButton(tr("Open memory scanner", "打开内存扫描"),
+                                                { screen = "memory_scanner" }, Modifier.fillMaxWidth().padding(12.dp))
+                                        }
                                         if (plugin.getString("id") == "performance-hud") {
                                             TextButton(tr("Performance settings", "性能插件设置"),
                                                 { screen = "performance_settings" }, Modifier.fillMaxWidth().padding(12.dp))
@@ -173,6 +180,10 @@ internal fun ManagerApp(
                                     HudCard(state, action, { screen = "performance_settings" }, {
                                         screen = "diagnostics"; loadDiagnostic("", 0)
                                     }, { helpReturn = "main"; screen = "metric_help" })
+                                }
+                                if (state.pluginEnabled("memory-scanner")) item {
+                                    Card { TextButton(tr("Open memory scanner", "打开内存扫描"),
+                                        { screen = "memory_scanner" }, Modifier.fillMaxWidth().padding(12.dp)) }
                                 }
                                 if (state.pluginEnabled("device-info")) item { DeviceCard(state.data.optString("system")) }
                                 if (state.pluginEnabled("gpu-info")) item { GpuCard(state) }

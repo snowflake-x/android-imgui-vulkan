@@ -8,7 +8,7 @@ add_library(vulkanscope_plugins STATIC plugin/runtime.cpp)
 set_target_properties(vulkanscope_plugins PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(vulkanscope_plugins PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 set(IMGUI ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui)
-add_library(vulkanscope SHARED manager/manager.cpp features/builtin_plugins.cpp features/performance_hud.cpp
+add_library(vulkanscope SHARED features/memory_scanner.cpp memory/scan.cpp memory/probe.cpp memory/inspect.cpp manager/manager.cpp features/builtin_plugins.cpp features/performance_hud.cpp
     monitor/hud.cpp monitor/hud_view.cpp monitor/model.cpp monitor/process.cpp monitor/collector.cpp monitor/sampler.cpp monitor/graphics_trace.cpp monitor/session.cpp monitor/diagnostics.cpp monitor/settings_ui.cpp
     monitor/gpu_memory.cpp monitor/gpu_timing.cpp
     platform/android_bridge.cpp platform/overlay_renderer.cpp platform/system_fonts.cpp
