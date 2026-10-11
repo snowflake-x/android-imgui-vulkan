@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(vulkanscope_plugin_tests LANGUAGES CXX)
+add_compile_definitions(IMGUI_USE_WCHAR32)
 
 enable_testing()
 find_package(Threads REQUIRED)
@@ -11,7 +12,7 @@ target_include_directories(plugin_runtime_test PRIVATE ..)
 target_link_libraries(plugin_runtime_test PRIVATE Threads::Threads)
 
 add_executable(builtin_plugins_test builtin_plugins_test.cpp
-    ../features/builtin_plugins.cpp
+    ../features/builtin_plugins.cpp ../ui/i18n.cpp
     ../plugin/runtime.cpp
     ../vendor/imgui/imgui.cpp
     ../vendor/imgui/imgui_draw.cpp
@@ -21,7 +22,7 @@ target_include_directories(builtin_plugins_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(builtin_plugins_test PRIVATE Threads::Threads)
 
 add_executable(performance_hud_test performance_hud_test.cpp
-    ../features/performance_hud.cpp
+    ../features/performance_hud.cpp ../ui/i18n.cpp
     ../plugin/runtime.cpp
     ../vendor/imgui/imgui.cpp
     ../vendor/imgui/imgui_draw.cpp
@@ -35,7 +36,7 @@ add_executable(native_monitor_test native_monitor_test.cpp ../monitor/model.cpp 
 target_include_directories(native_monitor_test PRIVATE ..)
 target_link_libraries(native_monitor_test PRIVATE Threads::Threads)
 
-add_executable(native_settings_test native_settings_test.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
+add_executable(native_settings_test native_settings_test.cpp ../ui/i18n.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
     ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/session.cpp ../monitor/hud.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
@@ -48,7 +49,17 @@ add_executable(classic_hud_test classic_hud_test.cpp ../monitor/hud.cpp ../monit
 target_include_directories(classic_hud_test PRIVATE .. ../vendor/imgui)
 target_compile_definitions(classic_hud_test PRIVATE HUD_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/fonts/DejaVuSansMono.ttf")
 
-foreach(test_target classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
+find_file(TEST_LATIN_FONT DejaVuSans.ttf PATHS /usr/share/fonts/truetype/dejavu REQUIRED)
+find_file(TEST_CJK_FONT NotoSansCJK-Regular.ttc PATHS /usr/share/fonts/opentype/noto REQUIRED)
+add_executable(navigation_i18n_test navigation_i18n_test.cpp ../monitor/hud_view.cpp ../monitor/hud.cpp ../ui/navigation.cpp ../ui/i18n.cpp
+    ../ui/font_catalog.cpp ../platform/system_fonts.cpp ../vendor/tinyxml2/tinyxml2.cpp
+    ../monitor/collector.cpp ../monitor/model.cpp ../monitor/process.cpp
+    ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(navigation_i18n_test PRIVATE .. ../vendor/imgui)
+target_link_libraries(navigation_i18n_test PRIVATE Threads::Threads)
+target_compile_definitions(navigation_i18n_test PRIVATE TEST_LATIN_FONT="${TEST_LATIN_FONT}" TEST_CJK_FONT="${TEST_CJK_FONT}")
+
+foreach(test_target navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -189,3 +189,5 @@ ctest --test-dir /tmp/vulkanscope-plugin-tests --output-on-failure
 `plugin_runtime_test` 验证生命周期、事务回滚、依赖、服务和事件的行为；`builtin_plugins_test` 在无 Android 窗口的 ImGui 环境中验证内置插件。`native_monitor_test` 验证原生采集解析、配置、子进程取消和线程退出；`native_settings_test` 验证 ImGui 设置和触摸键盘绘制。`performance_hud_test` 验证 HUD 加载与清理不触发宿主操作、报告每秒刷新、卸载撤销监听、重载重建缓存，以及图形生命周期结束后用户启动的宿主会话继续存在。Sanitizer 选项在 GCC 和 Clang 下启用 AddressSanitizer 与 UndefinedBehaviorSanitizer；不支持的工具链可关闭该选项。Android 表面重建、JNI 及实际 GPU 呈现仍需设备集成验证。
 
 HUD 宿主 `HostPerformanceHud` 可提供可选的 `drawPreview` 同步回调，用于在当前 ImGui 帧绘制原生快照。插件不持有采集器或 GPU 资源；未提供预览时保留文本报告回退。预览与配置回调仅绘制，不启动采集或请求权限。
+
+分页与国际化见 [原生界面说明](native-ui.md)。宿主仅向当前主页发送绘制事件，切到插件列表不卸载实例；插件从 `RenderFrame.language` 读取本帧语言。

@@ -25,7 +25,7 @@ int main() {
         ImGui::Begin("Native settings");
         for (const char *name : {"Fields and display order", "Advanced sensors and Surface selection",
                                  "Latest diagnostics", "Last game diagnostics"})
-            ImGui::GetStateStorage()->SetInt(ImGui::GetID(name), 1);
+            ImGui::GetStateStorage()->SetInt(ImGui::GetID(vulkanscope::ui::Label(vulkanscope::ui::Language::English, name).c_str()), 1);
         vulkanscope::monitor::DrawSettings(settings);
         ImGui::End();
         ImGui::Render();

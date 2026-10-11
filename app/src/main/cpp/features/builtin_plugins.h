@@ -1,6 +1,7 @@
 #pragma once
 
 #include "plugin/runtime.h"
+#include "ui/i18n.h"
 
 #include <cstdint>
 #include <functional>
@@ -23,6 +24,7 @@ struct RenderFrame {
     std::uint32_t vendorId = 0;
     std::uint32_t deviceId = 0;
     std::uint32_t imageCount = 0;
+    ui::Language language = ui::Language::English;
 };
 
 /** @brief 只读报告能力；JNI 实现和生命周期均归宿主所有。 */

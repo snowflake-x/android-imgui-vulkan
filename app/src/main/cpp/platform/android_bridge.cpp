@@ -1,5 +1,6 @@
 #include <android/asset_manager_jni.h>
 #include "platform/android_bridge.h"
+#include "platform/system_fonts.h"
 #include "monitor/hud_view.h"
 #include "platform/overlay_renderer.h"
 #include <android/log.h>
@@ -330,6 +331,32 @@ std::string PasteText() {
     auto string =
         static_cast<jstring>(e->CallObjectMethod(text, method(e, text, "toString", "()Ljava/lang/String;")));
     return exception(e) ? std::string{} : utf(e, string);
+}
+float ReadSystemFontScale() {
+    Jni j;
+    auto *e = j.env;
+    if (!e || !context) return 1;
+    auto resources = e->CallObjectMethod(context, method(e, context, "getResources", "()Landroid/content/res/Resources;"));
+    if (exception(e) || !resources) return 1;
+    auto config = e->CallObjectMethod(resources, method(e, resources, "getConfiguration", "()Landroid/content/res/Configuration;"));
+    if (exception(e) || !config) return 1;
+    auto field = e->GetFieldID(e->GetObjectClass(config), "fontScale", "F");
+    if (exception(e) || !field) return 1;
+    const float scale = e->GetFloatField(config, field);
+    return !exception(e) && std::isfinite(scale) && scale > 0 ? std::clamp(scale, .5f, 3.f) : 1;
+}
+std::string ReadSystemLocale() {
+    Jni j;
+    auto *e = j.env;
+    if (!e || !context) return "en";
+    auto resources = e->CallObjectMethod(context, method(e, context, "getResources", "()Landroid/content/res/Resources;"));
+    if (exception(e) || !resources) return "en";
+    auto configuration = e->CallObjectMethod(resources, method(e, resources, "getConfiguration", "()Landroid/content/res/Configuration;"));
+    if (exception(e) || !configuration) return "en";
+    auto locales = e->CallObjectMethod(configuration, method(e, configuration, "getLocales", "()Landroid/os/LocaleList;"));
+    if (exception(e) || !locales) return "en";
+    auto tags = static_cast<jstring>(e->CallObjectMethod(locales, method(e, locales, "toLanguageTags", "()Ljava/lang/String;")));
+    return exception(e) || !tags ? "en" : utf(e, tags);
 }
 void LoadHudFont(float pixels) {
     Jni j;

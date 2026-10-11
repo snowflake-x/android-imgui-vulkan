@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(vulkanscope LANGUAGES C CXX)
+add_compile_definitions(IMGUI_USE_WCHAR32)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -11,10 +12,11 @@ add_library(native_app_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glu
 target_include_directories(native_app_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
 add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp features/performance_hud.cpp
     monitor/hud.cpp monitor/hud_view.cpp monitor/model.cpp monitor/process.cpp monitor/collector.cpp monitor/session.cpp monitor/settings_ui.cpp
-    platform/android_bridge.cpp platform/overlay_renderer.cpp
+    platform/android_bridge.cpp platform/overlay_renderer.cpp platform/system_fonts.cpp
+    ui/i18n.cpp ui/navigation.cpp ui/font_catalog.cpp vendor/tinyxml2/tinyxml2.cpp
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp
     ${IMGUI}/backends/imgui_impl_android.cpp ${IMGUI}/backends/imgui_impl_vulkan.cpp)
 target_include_directories(vulkanscope PRIVATE ${IMGUI} ${IMGUI}/backends)
 target_compile_definitions(vulkanscope PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
-target_link_libraries(vulkanscope PRIVATE vulkanscope_plugins native_app_glue android log vulkan)
+target_link_libraries(vulkanscope PRIVATE vulkanscope_plugins native_app_glue android log vulkan dl)
 target_link_options(vulkanscope PRIVATE "-uANativeActivity_onCreate" "-Wl,-z,max-page-size=16384")

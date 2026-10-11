@@ -1,3 +1,6 @@
+#include "ui/widgets.h"
+#include "ui/navigation.h"
+#include "platform/system_fonts.h"
 #include "monitor/hud_view.h"
 #include <android_native_app_glue.h>
 #include <android/log.h>
@@ -45,6 +48,34 @@ static struct FeatureSetting {
 static std::vector<std::pair<std::string, bool>> pluginChanges;
 static std::string pluginError, rootReport;
 static double nextRootRefresh = 0;
+static vulkanscope::ui::Navigation navigation;
+static vulkanscope::ui::Language language = vulkanscope::ui::Language::English;
+static std::string systemLocale = "en";
+static std::unique_ptr<vulkanscope::SystemFonts> systemFonts;
+static ImFont *hudFont = nullptr;
+static bool reloadFonts = false;
+static float uiScale = 1;
+static std::string fontCorpus, loadedFontPreference;
+static double nextGlyphCheck = 0;
+using vulkanscope::ui::Text;
+using vulkanscope::ui::Label;
+
+/** @brief 字体仅在初始化或配置变化的帧边界重建，独立于悬浮窗 atlas。 */
+static void loadFonts() {
+    auto &io = ImGui::GetIO();
+    io.Fonts->Clear();
+    systemFonts = std::make_unique<vulkanscope::SystemFonts>();
+    fontCorpus = vulkanscope::MergeGlyphCorpus(fontCorpus, vulkanscope::ui::TranslationCorpus() + vulkanscope::monitor::NativeSession().system());
+    const auto preference = vulkanscope::monitor::NativeSession().config().language;
+    loadedFontPreference = preference;
+    const auto fontLocale = preference == "system" ? systemLocale : preference;
+    if (!systemFonts->load(18.0f * uiScale, fontLocale, fontCorpus)) vulkanscope::LoadHudFont(18.0f * uiScale);
+    io.FontDefault = io.Fonts->Fonts[0];
+    vulkanscope::LoadHudFont(18.0f * uiScale);
+    hudFont = io.Fonts->Fonts.back();
+    reloadFonts = false;
+}
+
 
 static void check(VkResult result) {
     if (result < 0) throw std::runtime_error("Vulkan error: " + std::to_string(result));
@@ -58,8 +89,11 @@ static void cleanup() {
     pluginError.clear();
     rootReport.clear();
     nextRootRefresh = 0;
+    nextGlyphCheck = 0;
     if (backend) { ImGui_ImplVulkan_Shutdown(); backend = false; }
     if (mainContext) { ImGui_ImplAndroid_Shutdown(); ImGui::DestroyContext(mainContext); mainContext = nullptr; }
+    systemFonts.reset();
+    hudFont = nullptr;
     if (device) {
         ImGui_ImplVulkanH_DestroyWindow(instance, device, &window, nullptr);
         vkDestroyDevice(device, nullptr);
@@ -129,8 +163,10 @@ static void initialize() {
         static std::string clipboard;
         clipboard = vulkanscope::PasteText(); return clipboard.c_str();
     };
-    float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f);
-    vulkanscope::LoadHudFont(18.0f * scale);
+    float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f) * vulkanscope::ReadSystemFontScale();
+    uiScale = scale;
+    systemLocale = vulkanscope::ReadSystemLocale();
+    loadFonts();
     ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
     style.WindowRounding = 0; style.FrameRounding = 3;
@@ -157,9 +193,9 @@ static void initialize() {
     auto hud = std::make_shared<vulkanscope::HostPerformanceHud>(
         [] { return vulkanscope::monitor::NativeSession().report(); },
         [settings] {
-            if (ImGui::Button("Grant overlay permission")) vulkanscope::HudAction(env, app->activity->clazz, 0);
-            if (ImGui::Button("Allow HUD notification")) vulkanscope::HudAction(env, app->activity->clazz, 4);
-            vulkanscope::monitor::DrawSettings(*settings);
+            if (ImGui::Button(Label(language, "Grant overlay permission").c_str())) vulkanscope::HudAction(env, app->activity->clazz, 0);
+            if (ImGui::Button(Label(language, "Allow HUD notification").c_str())) vulkanscope::HudAction(env, app->activity->clazz, 4);
+            vulkanscope::monitor::DrawSettings(*settings, language, hudFont);
         },
         [] { vulkanscope::HudAction(env, app->activity->clazz, 1); },
         [] { vulkanscope::HudAction(env, app->activity->clazz, 2); },
@@ -167,7 +203,7 @@ static void initialize() {
             using namespace vulkanscope::monitor;
             const auto config = NativeSession().config();
             const auto size = MeasureHud(config, ImGui::GetFontSize() * config.textSize / 18.0f, ImGui::GetContentRegionAvail().x, 10000);
-            DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, NativeSession().hud());
+            DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, NativeSession().hud(), hudFont);
             ImGui::Dummy(ImVec2(size.width, size.height));
         });
     vulkanscope::RegisterPerformanceHudPlugin(*plugins, std::move(hud));
@@ -197,10 +233,11 @@ static void applyPluginChanges() {
 
 /** @brief UI 只记录意图；插件运行状态在下一帧边界改变。 */
 static void pluginControls() {
-    if (!ImGui::CollapsingHeader("Plugins")) return;
+
     for (auto& feature : featureSettings) {
         bool enabled = plugins->isLoaded(feature.id);
-        if (ImGui::Checkbox(feature.label, &enabled)) {
+        ImGui::PushID(feature.id);
+        if (ImGui::Checkbox(Label(language, feature.label).c_str(), &enabled)) {
             /**
              * @brief 用户禁用立即停止宿主会话，避免下帧前 Surface 销毁丢失停用意图。
              * @note 这里已退出插件事件分发；普通插件清理只释放界面缓存和监听。
@@ -209,6 +246,10 @@ static void pluginControls() {
             pluginChanges.emplace_back(feature.id, enabled);
             feature.enabled = enabled;
         }
+        ImGui::TextWrapped("%s", Text(language, (std::string(feature.label) + " description").c_str()));
+        ImGui::TextDisabled("%s", Text(language, enabled ? "Enabled" : "Disabled"));
+        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        ImGui::PopID();
     }
     if (!pluginError.empty()) ImGui::TextWrapped("%s", pluginError.c_str());
 }
@@ -223,25 +264,34 @@ static void panel() {
     bool valid = rect.right > rect.left && rect.bottom > rect.top;
     ImGui::SetNextWindowPos(valid ? ImVec2(rect.left, rect.top) : ImVec2(0, 0));
     ImGui::SetNextWindowSize(valid ? ImVec2(rect.right - rect.left, rect.bottom - rect.top) : io.DisplaySize);
-    ImGui::Begin("VulkanScope", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.7f, 1), "VULKAN SCOPE");
+    ImGui::Begin("VulkanScope", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    auto config = vulkanscope::monitor::NativeSession().config();
+    language = vulkanscope::ui::ResolveLanguage(config.language, systemLocale);
+    vulkanscope::ui::DrawPages(navigation, language, [&] {
+        const char *languages[] = {Text(language, "Follow system"), "English", "简体中文"};
+        int selection = config.language == "en" ? 1 : config.language == "zh-Hans" ? 2 : 0;
+        if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Language").c_str(), &selection, languages, 3)) {
+            config.language = selection == 1 ? "en" : selection == 2 ? "zh-Hans" : "system";
+            if (vulkanscope::monitor::NativeSession().configure(config)) reloadFonts = true;
+        }
+        ImGui::TextDisabled("%s", Text(language, systemFonts->description().empty() ? "System font fallback" : "System font"));
     plugins->emit(vulkanscope::RenderFrame{
         io.DeltaTime, io.Framerate, ImGui::GetTime(), window.Width, window.Height,
         properties.deviceName, properties.apiVersion, properties.driverVersion,
-        properties.vendorID, properties.deviceID, window.ImageCount
+        properties.vendorID, properties.deviceID, window.ImageCount, language
     });
-    pluginControls();
     if (rootReport.empty() || ImGui::GetTime() >= nextRootRefresh) {
         rootReport = vulkanscope::monitor::NativeSession().rootReport();
         nextRootRefresh = ImGui::GetTime() + 1.0;
     }
-    if (ImGui::CollapsingHeader("Optional root diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data.");
-        if (ImGui::Button("Request root / refresh", ImVec2(-1, ImGui::GetFontSize()*2.5f))) {
+    if (ImGui::CollapsingHeader(Label(language, "Optional root diagnostics").c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextWrapped("%s", Text(language, "Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data."));
+        if (ImGui::Button(Label(language, "Request root / refresh").c_str(), ImVec2(-1, ImGui::GetFontSize()*2.5f))) {
             vulkanscope::monitor::NativeSession().requestRoot(); rootReport = vulkanscope::monitor::NativeSession().rootReport();
         }
         ImGui::TextWrapped("%s", rootReport.c_str());
     }
+    }, [] { pluginControls(); });
     ImGui::End();
     ImGui::Render();
 }
@@ -249,6 +299,20 @@ static void render() {
     int width = ANativeWindow_getWidth(app->window), height = ANativeWindow_getHeight(app->window);
     if (width <= 0 || height <= 0) return;
     applyPluginChanges();
+    if (vulkanscope::monitor::NativeSession().config().language != loadedFontPreference) reloadFonts = true;
+    if (ImGui::GetTime() >= nextGlyphCheck) {
+        const auto &session = vulkanscope::monitor::NativeSession();
+        const auto current = session.system() + session.rootReport() + session.diagnostics() +
+                             session.diagnostics(true) + session.config().surface;
+        if (systemFonts->needsGlyphs(current)) { fontCorpus = vulkanscope::MergeGlyphCorpus(fontCorpus, current); reloadFonts = true; }
+        nextGlyphCheck = ImGui::GetTime() + 1.0;
+    }
+    if (reloadFonts) {
+        check(vkDeviceWaitIdle(device));
+        ImGui_ImplVulkan_DestroyFontsTexture();
+        loadFonts();
+        if (!ImGui_ImplVulkan_CreateFontsTexture()) throw std::runtime_error("Font texture upload failed");
+    }
     if (rebuild || width != window.Width || height != window.Height) {
         check(vkDeviceWaitIdle(device));
         ImGui_ImplVulkan_SetMinImageCount(2);
@@ -294,7 +358,19 @@ static void command(android_app*, int32_t cmd) {
     if (mainContext) ImGui::SetCurrentContext(mainContext);
     if (cmd == APP_CMD_INIT_WINDOW && app->window && !ready) initialize();
     if (cmd == APP_CMD_TERM_WINDOW) cleanup();
-    if (cmd == APP_CMD_GAINED_FOCUS) focused = true;
+    if (cmd == APP_CMD_GAINED_FOCUS) {
+        focused = true;
+        const auto locale = vulkanscope::ReadSystemLocale();
+        systemLocale = locale;
+        reloadFonts = true;
+    }
+    if (cmd == APP_CMD_CONFIG_CHANGED) {
+        const float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f) * vulkanscope::ReadSystemFontScale();
+        if (ready) ImGui::GetStyle().ScaleAllSizes(scale / uiScale);
+        uiScale = scale;
+        systemLocale = vulkanscope::ReadSystemLocale();
+        reloadFonts = true;
+    }
     if (cmd == APP_CMD_LOST_FOCUS) focused = false;
     if (cmd == APP_CMD_WINDOW_RESIZED || cmd == APP_CMD_CONTENT_RECT_CHANGED) rebuild = true;
 }

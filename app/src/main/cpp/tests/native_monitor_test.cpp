@@ -95,6 +95,7 @@ void config() {
     std::string error;
     Config c;
     c.root = true;
+    c.language = "zh-Hans";
     c.hudGraph = false;
     c.hudExtras = true;
     c.surface = "SurfaceView[com.game.app] 'quoted'";
@@ -105,6 +106,7 @@ void config() {
     c.enabled["fps"] = false;
     require(SaveConfig(path, c, error), "save config");
     auto loaded = LoadConfig(path);
+    require(loaded.language == "zh-Hans", "persist language preference");
     require(!loaded.hudGraph && loaded.hudExtras, "persist classic HUD options");
     require(loaded.root && loaded.surface == c.surface && loaded.textSize == 24 && loaded.interval == 1000 &&
                 !loaded.has("fps"),
@@ -115,6 +117,10 @@ void config() {
     auto legacy = LoadConfig(path);
     require(legacy.hudGraph && !legacy.hudExtras && !legacy.has("fps") && legacy.corner == 2,
             "version one preserves selections and adopts classic defaults");
+    std::ofstream(path) << "VulkanScopeHUD 2\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\n0 1\nfps 0\n";
+    auto versionTwo = LoadConfig(path);
+    require(versionTwo.language == "system" && !versionTwo.hudGraph && versionTwo.hudExtras,
+            "version two adopts system language without changing HUD layout");
     std::ofstream(path) << "bad config";
     require(!LoadConfig(path).root, "invalid config fails closed");
     std::remove(path.c_str());
