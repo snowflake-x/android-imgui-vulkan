@@ -91,6 +91,13 @@ std::string GraphicsApiCaption(const Config &config, const HudSnapshot &snapshot
         return value == snapshot.values.end() ? std::string{} : value->second;
     };
     const auto status = get("graphics_api_status");
+    if (status == "mapped") {
+        const auto api = get("graphics_api");
+        const auto name = api.substr(0, api.find(" ("));
+        return name == "OpenGL ES + Vulkan" ? "Loaded: GLES+Vulkan"
+             : name == "OpenGL ES" ? "Loaded: GLES"
+             : name == "Vulkan" ? "Loaded: Vulkan" : "API: unavailable";
+    }
     const std::pair<const char *, const char *> captions[] = {
         {"disabled", "API: OFF"},
         {"root_disabled", "API: root OFF"},

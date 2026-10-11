@@ -141,6 +141,29 @@ std::optional<std::string> rootLibrary(const CommandResult &command, std::uint64
     return command.output.substr(bytes, size);
 }
 }
+bool GraphicsProbeLibrary(const std::string &name) {
+    return name == "libEGL.so" || name == "libvulkan.so" || name == "libGLESv2.so" ||
+           name == "libEGL_adreno.so" || name == "libGLESv2_adreno.so" ||
+           name == "libGLES_mali.so" || name == "libGLESv2_angle.so" ||
+           name == "libEGL_angle.so" ||
+           (name.rfind("vulkan.", 0) == 0 && endsWith(name, ".so"));
+}
+std::string GraphicsMappedLibraries(const std::string &text) {
+    bool egl = false, vk = false;
+    std::istringstream rows(text);
+    std::string line;
+    while (std::getline(rows, line)) {
+        std::istringstream row(line);
+        std::string range, permissions, offset, device, inode, path;
+        if (!(row >> range >> permissions >> offset >> device >> inode >> path) ||
+            permissions.find('x') == std::string::npos || path.empty() || path.front() != '/') continue;
+        const auto name = path.substr(path.rfind('/') + 1);
+        if (!GraphicsProbeLibrary(name)) continue;
+        egl |= name.find("GLES") != std::string::npos || name.find("EGL") != std::string::npos;
+        vk |= name.find("vulkan") != std::string::npos;
+    }
+    return egl && vk ? "OpenGL ES + Vulkan" : vk ? "Vulkan" : egl ? "OpenGL ES" : "";
+}
 std::optional<std::uint64_t> GraphicsSymbolOffset(const std::string &file, const std::string &symbol) {
     const auto data = readLibrary(file, 64 * 1024 * 1024);
     return data ? symbolOffset(*data, symbol) : std::nullopt;
@@ -150,33 +173,37 @@ std::string GraphicsTraceResult(const std::string &trace) {
     std::istringstream lines(trace);
     std::string line;
     static const std::regex eventPattern(
-        R"(\s[0-9]+\.[0-9]+: (egl_swap|egl_damage|egl_damage_ext|vk_present|vk_submit|vk_submit2|vk_submit2_khr): )");
+        R"(\s[0-9]+\.[0-9]+: (egl_swap|egl_damage|egl_damage_ext|gl_draw|gl_elements|vk_present|vk_submit|vk_submit2|vk_submit2_khr)(?:_[0-9]+)?: )");
     while (std::getline(lines, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::smatch match;
         if (!std::regex_search(line, match, eventPattern)) continue;
-        egl |= match[1].str().rfind("egl_", 0) == 0;
+        egl |= match[1].str().rfind("egl_", 0) == 0 || match[1].str().rfind("gl_", 0) == 0;
         vk |= match[1].str().rfind("vk_", 0) == 0;
     }
     if (egl && vk) return "OpenGL ES + Vulkan (calls observed)";
     if (vk) return "Vulkan (calls observed)";
-    if (egl) return "OpenGL ES (EGL swap observed)";
+    if (egl) return "OpenGL ES (calls observed)";
     return "N/A (no graphics calls observed in 200 ms)";
 }
 std::string TraceGraphics(const std::string &package, int user, const std::atomic<bool> &cancel,
                          const std::function<CommandResult(const std::string &, int)> &runner,
                          Values *diagnostics) {
     std::string details;
+    std::string mappedEvidence;
     auto note = [&](const std::string &text) {
         if (details.size() < 4096) details += text.substr(0, 4096 - details.size());
     };
     auto finish = [&](const std::string &status, const std::string &result, const std::string &detail = "") {
         note(detail);
+        const bool fallback = !mappedEvidence.empty() &&
+            (status == "no_calls" || status == "trace_unavailable");
         if (diagnostics) {
-            (*diagnostics)["graphics_api_status"] = status;
+            (*diagnostics)["graphics_api_trace_status"] = status;
+            (*diagnostics)["graphics_api_status"] = fallback ? "mapped" : status;
             (*diagnostics)["graphics_api_details"] = details;
         }
-        return result;
+        return fallback ? mappedEvidence + " (libraries loaded; calls unconfirmed)" : result;
     };
     if (cancel) return finish("cancelled", "N/A (graphics tracing cancelled)");
     if (user < 0 || package.empty() || package.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._") != std::string::npos)
@@ -192,8 +219,7 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
         "case \"$u\" in ''|*[!0-9]*) continue;; esac; [ $((u / 100000)) -eq " + std::to_string(user) +
         " ] || continue; echo PID=$p; "
         "echo START=$(sed 's/.*) //' /proc/$p/stat | cut -d' ' -f20); "
-        "echo UID=$u; sed -n '/^[^ ]* [^ ]*x[^ ]* .*\\/libEGL\\.so$/p; "
-        "/^[^ ]* [^ ]*x[^ ]* .*\\/libvulkan\\.so$/p' /proc/$p/maps || fail TARGET_MAPS_READ; "
+        "echo UID=$u; sed -n '/^[^ ]* [^ ]*x[^ ]* .*\\/\\(libEGL[^ ]*\\|libGLES[^ ]*\\|libvulkan\\|vulkan\\.[^ ]*\\)\\.so$/p' /proc/$p/maps || fail TARGET_MAPS_READ; "
         "echo VSCOPE_GRAPHICS_TARGET_COMPLETE; exit 0; done; fail TARGET_INACCESSIBLE", 2000);
     if (cancel) return finish("cancelled", "N/A (graphics tracing cancelled)");
     if (!target.success || target.truncated || !endsWith(target.output, TargetComplete))
@@ -225,13 +251,16 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
     const auto mapsAt = maps.tellg();
     if (mapsAt < 0 || targetText.size() - static_cast<std::size_t>(mapsAt) >= MaxMapsBytes)
         return finish("target_unavailable", "N/A (target mappings truncated)");
+    const auto loaded = GraphicsMappedLibraries(targetText.substr(static_cast<std::size_t>(mapsAt)));
+    mappedEvidence = loaded;
+    if (diagnostics) (*diagnostics)["graphics_api_libraries"] = loaded.empty() ? "unavailable" : loaded;
     const auto process = "/proc/" + std::to_string(pid);
     const auto identity = "[ \"$(sed 's/.*) //' " + process + "/stat | cut -d' ' -f20)\" = " + Quote(start) +
         " ] && [ \"$(sed -n 's/^Uid:[[:space:]]*\\([0-9]*\\).*/\\1/p' " + process + "/status)\" = " + Quote(uid) +
         " ] && [ \"$(tr '\\000' '\\n' < " + process + "/cmdline | head -n 1)\" = " + Quote(package) + " ]";
     struct Probe { std::string event, path, validation; std::uint64_t offset; };
     std::vector<Probe> probes;
-    std::set<std::string> seen, events;
+    std::set<std::string> seen;
     unsigned candidates = 0, unreadable = 0;
     while (std::getline(maps, line)) {
         if (cancel) return finish("cancelled", "N/A (graphics tracing cancelled)");
@@ -240,7 +269,7 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
         if (!(row >> range >> permissions >> address >> device >> inode >> path) ||
             permissions.find('x') == std::string::npos || !safePath(path) || !seen.insert(path).second) continue;
         const auto name = path.substr(path.rfind('/') + 1);
-        if (name != "libEGL.so" && name != "libvulkan.so") continue;
+        if (!GraphicsProbeLibrary(name)) continue;
         if (++candidates > 8) {
             note("Additional library mappings skipped after bounded candidate limit\n");
             break;
@@ -296,9 +325,10 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
                                   {"eglSwapBuffersWithDamageKHR", "egl_damage"},
                                   {"eglSwapBuffersWithDamageEXT", "egl_damage_ext"},
                                   {"vkQueuePresentKHR", "vk_present"}, {"vkQueueSubmit", "vk_submit"},
-                                  {"vkQueueSubmit2", "vk_submit2"}, {"vkQueueSubmit2KHR", "vk_submit2_khr"}}) {
+                                  {"vkQueueSubmit2", "vk_submit2"}, {"vkQueueSubmit2KHR", "vk_submit2_khr"},
+                                  {"glDrawArrays", "gl_draw"}, {"glDrawElements", "gl_elements"}}) {
             const auto at = symbolOffset(*data, symbol.first);
-            if (at && events.insert(symbol.second).second) probes.push_back({symbol.second, targetPath, validation, *at});
+            if (at) probes.push_back({std::string(symbol.second) + "_" + std::to_string(candidates), targetPath, validation, *at});
         }
         if (probes.size() == symbolsBefore) note(path + ": no additional supported dynamic function symbols\n");
     }
@@ -366,6 +396,6 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
     }
     const auto result = GraphicsTraceResult(capture.output);
     return finish(result.rfind("N/A", 0) == 0 ? "no_calls" : "observed", result,
-                  result.rfind("N/A", 0) == 0 ? "No loader calls observed in 200 ms; direct driver dispatch is not covered" : "");
+                  result.rfind("N/A", 0) == 0 ? "No calls observed at accessible loader/driver symbols in 200 ms; loaded libraries do not confirm active rendering" : "");
 }
 }

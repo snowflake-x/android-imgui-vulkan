@@ -329,8 +329,8 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
             EditSetting(tr("Exact game Surface (optional)", "游戏 Surface 精确名称（可留空）"), "surface", state.config.optString("surface"), change)
             EditSetting(tr("CPU power sensor path", "CPU 功率传感器路径"), "powerPath", state.config.optString("powerPath"), change)
             EditSetting(tr("Sensor to watts multiplier", "传感器数值转瓦特倍率"), "powerScale", state.config.optString("powerScale", "0.000001"), change)
-            Description(tr("Graphics API and GPU timing require separate tracing switches. No calls means no evidence in the capture window, not zero GPU activity.",
-                "图形 API 和 GPU 耗时需要分别开启跟踪。未捕获调用表示采样窗口内没有调用证据，不代表 GPU 没有工作。"))
+            Description(tr("Graphics API and GPU timing require separate tracing switches. Loaded: identifies libraries in the game process; it does not confirm rendering calls.",
+                "图形 API 和 GPU 耗时需要分别开启跟踪。Loaded: 表示游戏进程加载了相关库，尚未确认实际渲染调用。"))
         }
     }
 }

@@ -72,6 +72,15 @@ void elf32() {
     std::remove(path.c_str());
 }
 void evidence() {
+    require(GraphicsTraceResult(" thread-25 [000] .... 1.2: gl_draw_2: (0x1)\n") == "OpenGL ES (calls observed)",
+            "driver draw events bypass loader dispatch");
+    require(GraphicsTraceResult(" thread-25 [000] .... 1.2: vk_present_3: (0x1)\n") == "Vulkan (calls observed)",
+            "driver Vulkan events are recognized");
+    require(GraphicsProbeLibrary("libGLESv2_adreno.so") && GraphicsProbeLibrary("vulkan.adreno.so"), "Adreno driver candidates");
+    require(!GraphicsProbeLibrary("libunity.so"), "engines are not graphics drivers");
+    require(GraphicsMappedLibraries("1000-2000 r-xp 0000 00:01 1 /vendor/lib64/egl/libGLESv2_adreno.so\n") == "OpenGL ES", "parse driver maps");
+    require(GraphicsMappedLibraries("1000-2000 r--p 0000 00:01 1 /vendor/lib64/egl/libGLESv2_adreno.so\n").empty(), "require executable mapping");
+    require(GraphicsMappedLibraries("1000-2000 r-xp 0000 00:01 1 /system/lib64/libEGL.so\n1000-2000 r-xp 0000 00:01 2 /vendor/lib64/hw/vulkan.adreno.so\n") == "OpenGL ES + Vulkan", "coexisting libraries are ambiguous");
     require(GraphicsTraceResult("libvulkan.so eglSwapBuffers").rfind("N/A", 0) == 0,
             "library names are not evidence of calls");
     require(GraphicsTraceResult("# ignored: vk_present:\n").rfind("N/A", 0) == 0, "ignore trace comments");
@@ -224,7 +233,7 @@ void rootFallback() {
         };
         const auto result = TraceGraphics("com.example.game", 0, cancel, runner, &diagnostics);
         if (!failure) {
-            require(calls == 4 && result == "OpenGL ES (EGL swap observed)", "root-only readable library yields observed API");
+            require(calls == 4 && result == "OpenGL ES (calls observed)", "root-only readable library yields observed API");
             require(diagnostics.at("graphics_api_details").find("read through root target namespace") != std::string::npos,
                     "successful fallback is diagnosable");
         } else {
@@ -283,7 +292,7 @@ void largeMappings() {
         return CommandResult{true, {}, {}};
     }, &diagnostics);
     std::remove(path.c_str());
-    require(calls == 3 && result == "OpenGL ES (EGL swap observed)", "large target maps still yield an observed API");
+    require(calls == 3 && result == "OpenGL ES (calls observed)", "large target maps still yield an observed API");
 }
 
 /** @brief 在临时 proc 镜像执行真实 root 读取脚本，覆盖 stat、grep、进程身份和二进制传输。 */
@@ -341,11 +350,42 @@ void realRootProtocol() {
             return CommandResult{true, {}, {}};
         }, &diagnostics);
         require(calls == (changed ? 2 : 4), "root ELF command lifecycle");
-        if (!changed) require(result == "OpenGL ES (EGL swap observed)", "real root ELF bytes resolve working probes");
+        if (!changed) require(result == "OpenGL ES (calls observed)", "real root ELF bytes resolve working probes");
         else require(diagnostics.at("graphics_api_details").find(changed == 1 ? "TARGET_CHANGED" : "MAPPING_CHANGED") != std::string::npos,
                      "identity and literal mapping failures retain their exact stage");
     }
     std::filesystem::remove_all(fixture);
+}
+
+void driverDispatch() {
+    const auto directory = std::filesystem::path("/tmp/vscope-driver-" + std::to_string(getpid()));
+    std::filesystem::create_directory(directory);
+    const auto driver = (directory / "vulkan.adreno.so").string();
+    std::filesystem::copy_file(TRACE_FIXTURE, driver, std::filesystem::copy_options::overwrite_existing);
+    struct stat loaderStat{}, driverStat{};
+    require(stat(TRACE_FIXTURE, &loaderStat) == 0 && stat(driver.c_str(), &driverStat) == 0, "driver fixture identity");
+    auto target = mappedTarget(TRACE_FIXTURE, loaderStat);
+    auto second = mappedTarget(driver, driverStat);
+    second.erase(0, second.find("1000-2000"));
+    target.replace(target.find("VSCOPE_GRAPHICS_TARGET_COMPLETE"), std::string::npos, second);
+    std::atomic<bool> cancel{false};
+    Values diagnostics;
+    int calls = 0;
+    auto result = TraceGraphics("com.example.game", 0, cancel, [&](const std::string &script, int timeout) {
+        syntax(script, timeout);
+        if (++calls == 1) return CommandResult{true, target, {}};
+        if (calls == 2) {
+            require(script.find("/vk_present_1") != std::string::npos && script.find("/vk_present_2") != std::string::npos,
+                    "same-named driver function gets its own probe alongside loader");
+            require(script.find("/proc/123/root" + driver) != std::string::npos, "driver inode used for direct dispatch probe");
+            return CommandResult{true, " thread-25 [000] .... 1.2: vk_present_2: (0x1)\nTRACE_COMPLETE\n", {}};
+        }
+        require(script.find("/vk_present_2") != std::string::npos, "driver probe included in cleanup");
+        return CommandResult{true, {}, {}};
+    }, &diagnostics);
+    require(calls == 3 && result == "Vulkan (calls observed)" && diagnostics.at("graphics_api_status") == "observed",
+            "driver-only calls identify Vulkan without loader calls");
+    std::filesystem::remove_all(directory);
 }
 
 void classifications() {
@@ -371,8 +411,11 @@ void classifications() {
             if (calls == 2) return test.result;
             return CommandResult{true, {}, {}};
         }, &diagnostics);
-        require(calls == 3 && result.rfind("N/A", 0) == 0, "failed or event-free captures remain unknown and are cleaned");
-        require(diagnostics.at("graphics_api_status") == test.status, "failure stage has stable status code");
+        const bool mapped = std::string(test.status) == "no_calls" || std::string(test.status) == "trace_unavailable";
+        require(calls == 3 && (mapped ? result.find("calls unconfirmed") != std::string::npos : result.rfind("N/A", 0) == 0),
+                "failed or event-free captures never claim calls and are cleaned");
+        require(diagnostics.at("graphics_api_status") == (mapped ? "mapped" : test.status), "loaded evidence distinguished from calls");
+        require(diagnostics.at("graphics_api_trace_status") == test.status, "failure stage has stable status code");
         require(diagnostics.at("graphics_api_details").size() <= 4096, "diagnostics are bounded");
     }
     int calls = 0;
@@ -400,7 +443,7 @@ void classifications() {
 }
 }
 int main() {
-    try { symbols(); elf32(); evidence(); lifecycle(); rootFallback(); largeMappings(); realRootProtocol(); classifications(); }
+    try { symbols(); elf32(); evidence(); lifecycle(); rootFallback(); largeMappings(); realRootProtocol(); driverDispatch(); classifications(); }
     catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
     std::cout << "graphics tracing tests passed\n";
 }

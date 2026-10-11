@@ -53,6 +53,9 @@ void graphicsApiCaptions() {
         require(caption == status.second && caption.size() <= 20,
                 "each failure stage fits the HUD and overrides stale observed calls");
     }
+    sample.values["graphics_api_status"] = "mapped";
+    sample.values["graphics_api"] = "OpenGL ES + Vulkan (libraries loaded; calls unconfirmed)";
+    require(GraphicsApiCaption(config, sample) == "Loaded: GLES+Vulkan", "library evidence never looks like confirmed calls");
     sample.values.erase("graphics_api_status");
     sample.values["graphics_api"] = "N/A (no accessible EGL/Vulkan probe symbols)";
     require(GraphicsApiCaption(config, sample) == "API: unavailable", "legacy N/A never becomes an API name");
