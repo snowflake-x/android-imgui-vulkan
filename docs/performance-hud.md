@@ -97,7 +97,7 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 
 在 ImGui 配置的 Root 选项附近启用 **Graphics API (root call tracing) / 图形 API（root 调用跟踪）**，并显式启用 root 采集。这是独立开关，默认和字段预设均关闭；仅授权 Root 不会开启探针。启用后 Classic HUD 的第二行显示本次观察到的 API；关闭、等待、权限失败、符号不可用和未捕获调用分别显示状态。主页报告及诊断提供完整原因。`Device Vulkan API version / 设备 Vulkan API 版本`（配置键仍为 `gpu_api`）是监控程序查询到的 Vulkan 设备能力，不代表目标应用当前使用的 API 或版本。
 
-实现位于 `monitor/graphics_trace.*`，由现有性能 HUD 插件的 Collector 工作线程调用，不增加 Java/Kotlin 功能层。每轮通过包名和 Android user 查找前台应用的主进程，先筛选 EGL/Vulkan 可执行映射再有界读取，避免大型游戏的无关映射占满输出上限，从 ELF32/ELF64 动态符号及可执行 PT_LOAD 段计算文件偏移。优先核对本地库文件的设备号与 inode；本地不可读或文件与映射不一致时，通过 Root 有界读取 `/proc/<pid>/root/<映射路径>`（单个库最多 16 MiB），在 C++ 内存中解析 ELF，并用对应路径设置探针。读取前后核对进程身份及文件设备号、inode，避免 Android 挂载命名空间不同导致读错库。未观察到调用或 tracefs 不可用时，另行展示已加载库类别（`Loaded:`），不将库的存在当作实际调用证据。
+实现位于 `monitor/graphics_trace.*`，由现有性能 HUD 插件的 Collector 工作线程调用，不增加 Java/Kotlin 功能层。每轮通过包名和 Android user 查找前台应用的主进程，先筛选 EGL/Vulkan 可执行映射再有界读取，避免大型游戏的无关映射占满输出上限，从 ELF32/ELF64 动态符号及可执行 PT_LOAD 段计算文件偏移。优先核对本地库文件的设备号与 inode；本地不可读或文件与映射不一致时，通过 Root 有界读取 `/proc/<pid>/root/<映射路径>`（单个库最多 16 MiB），在 C++ 内存中解析 ELF，并用对应路径设置探针。读取前后核对进程身份及文件设备号、inode，避免 Android 挂载命名空间不同导致读错库。未观察到调用、tracefs 不可用或全部探针均不支持时，另行展示已加载库类别（`Loaded:`），不将库的存在当作实际调用证据。
 
 诊断中的 `graphics_api_status` 是显示状态；`mapped` 表示仅确认库加载，`graphics_api_trace_status` 保留原始跟踪阶段状态，`graphics_api_details` 保留有界的失败细节。`libraries_unavailable` 表示未匹配到图形库，附带 `graphics_api_maps_sample` 的有界原始可执行映射样本；`symbols_unavailable` 表示匹配到库但尚未找到可用探针符号，不能据此断言内核不支持；`trace_unavailable` 表示 tracefs 或实例不可用，`probe_failed` 表示注册/启用探针失败，`no_calls` 表示本轮完整采样未观察到调用。授权、目标进程、捕获和清理失败也各自保留状态。停止或采样过期时，悬浮窗不继续显示旧的 API 结论。
 
@@ -107,11 +107,13 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 - `vkQueuePresentKHR`、`vkQueueSubmit`、`vkQueueSubmit2/KHR`。
 - 厂商驱动导出的同名函数及 `glDrawArrays`、`glDrawElements`；每个库使用独立事件，避免 loader 与 driver 的同名符号相互覆盖。
 
-每轮建立唯一事件组和独立 trace 实例，对目标进程当时存在的线程设置 `common_pid` 过滤，开启 200 ms 后停止。采样前后核对进程启动时间、UID 和 cmdline；仅在采样成功并读取到对应调用事件时报告 GLES、Vulkan 或两者。没有事件时显示已加载库类别和 `Loaded:`（仅加载，调用未确认），不保留上一进程的结论，也不推断应用未使用 GPU。跟踪会增加开销，采集周期还包含 setup/cleanup 时间，不能将此模式视为零开销性能测量。
+每轮建立唯一事件组和独立 trace 实例，优先通过独立实例的 `set_event_pid` 写入目标进程线程列表，避免长 `common_pid` 表达式超过内核过滤器限制；旧内核未提供此文件时才使用逐事件 `common_pid` 过滤，开启 200 ms 后停止。采样前后核对进程启动时间、UID 和 cmdline；仅在采样成功并读取到对应调用事件时报告 GLES、Vulkan 或两者。没有事件时显示已加载库类别和 `Loaded:`（仅加载，调用未确认），不保留上一进程的结论，也不推断应用未使用 GPU。跟踪会增加开销，采集周期还包含 setup/cleanup 时间，不能将此模式视为零开销性能测量。
 
 停止、超时或失败时，shell trap 清理本轮事件；root shell 内部另有两秒超时，防止 su 服务脱离应用进程组后继续采样；C++ 另执行一次不受采集取消标志影响、最长五秒的清理。失败后先等待内部时限结束再清理，正常采样无此等待。只操作本次创建的实例和事件，不清空全局 trace、不改变 SELinux 策略。若清理失败，显示错误并停止当前宿主会话中的后续跟踪，HUD 停止/启动和 Root 开关不能清除此状态，建议重启设备后重试。系统强制终止、内核错误或 root 服务异常仍可能导致残留，不能保证此类情况下成功清理。
 
 图形库筛选显式使用 Android Toybox 支持的 `sed -E` 扩展正则，避免 GNU 基本正则 `\|` 扩展造成空结果；允许映射中的空白以及 `(deleted)` 后缀。已删除库仍须通过 inode/路径校验才能安装探针，不会根据旧文件偏移猜测。 无匹配时自动保存包含 EGL/GLES/Vulkan 文字的原始映射行（最多 8 KiB）和可执行映射样本（最多 4 KiB），可通过应用内游戏诊断历史复制，无需游戏运行时手动执行命令。
+
+各函数探针独立尝试，创建或过滤失败只跳过该函数；启用失败后确认禁用，再尝试其他函数。仅在至少一个过滤后的探针启用成功时采样；全部失败时保留已加载库信息（`Loaded:`），不声称观察到调用。`graphics_api_probe_report` 在成功和失败采样中都保留逐函数的启用/跳过结果，切回主界面可在游戏诊断历史中复制。进程身份变化、清理失败仍会中止整轮，不放宽目标归属检查。
 
 ### 支持边界
 

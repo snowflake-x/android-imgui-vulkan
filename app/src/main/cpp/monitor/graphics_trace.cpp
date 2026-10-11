@@ -197,7 +197,7 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
     auto finish = [&](const std::string &status, const std::string &result, const std::string &detail = "") {
         note(detail);
         const bool fallback = !mappedEvidence.empty() &&
-            (status == "no_calls" || status == "trace_unavailable");
+            (status == "no_calls" || status == "trace_unavailable" || status == "probe_failed");
         if (diagnostics) {
             (*diagnostics)["graphics_api_trace_status"] = status;
             (*diagnostics)["graphics_api_status"] = fallback ? "mapped" : status;
@@ -372,24 +372,45 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
         "f=''; for task in /proc/" + std::to_string(pid) + "/task/*; do tid=${task##*/}; "
         "case \"$tid\" in ''|*[!0-9]*) continue;; esac; "
         "[ -z \"$f\" ] || f=\"$f || \"; f=\"${f}common_pid == $tid\"; done; "
-        "[ -n \"$f\" ] || fail TARGET_THREADS; ";
+        "[ -n \"$f\" ] || fail TARGET_THREADS; "
+        "pid_filter=0; pid_count=0; if [ -e \"$i/set_event_pid\" ]; then "
+        ": > \"$i/set_event_pid\" || fail PROBE_PID_FILTER; "
+        "for task in /proc/" + std::to_string(pid) + "/task/*; do tid=${task##*/}; "
+        "case \"$tid\" in ''|*[!0-9]*) continue;; esac; "
+        "echo \"$tid\" >> \"$i/set_event_pid\" || fail PROBE_PID_FILTER; pid_count=$((pid_count + 1)); done; "
+        "[ \"$pid_count\" -gt 0 ] || fail TARGET_THREADS; pid_filter=1; fi; "
+        "installed=0; add_probe() { event=$1; definition=$2; "
+        "if ! (printf '%s\\n' \"$definition\" >> \"$t/uprobe_events\"); then "
+        "echo VSCOPE_PROBE_SKIPPED=CREATE:$event; return; fi; "
+        "if [ \"$pid_filter\" -eq 0 ] && ! (echo \"$f\" > \"$i/events/" + group + "/$event/filter\"); then "
+        "echo VSCOPE_PROBE_SKIPPED=FILTER:$event; return; fi; "
+        "if ! (echo 1 > \"$i/events/" + group + "/$event/enable\"); then "
+        "echo 0 > \"$i/events/" + group + "/$event/enable\" || fail PROBE_DISABLE; "
+        "echo VSCOPE_PROBE_SKIPPED=ENABLE:$event; return; fi; "
+        "installed=$((installed + 1)); echo VSCOPE_PROBE_ENABLED=$event; }; ";
     std::set<std::string> validated;
     for (const auto &probe : probes) {
         if (validated.insert(probe.path).second) script += probe.validation + " || fail LIBRARY_IDENTITY; ";
         std::ostringstream hex;
         hex << "0x" << std::hex << probe.offset;
-        script += "echo " + Quote("p:" + group + "/" + probe.event + " " + probe.path + ":" + hex.str()) +
-            " >> \"$t/uprobe_events\" || fail PROBE_CREATE:" + probe.event + "; echo \"$f\" > \"$i/events/" + group + "/" + probe.event +
-            "/filter\" || fail PROBE_FILTER:" + probe.event + "; echo 1 > \"$i/events/" + group + "/" + probe.event +
-            "/enable\" || fail PROBE_ENABLE:" + probe.event + "; ";
+        script += "add_probe " + Quote(probe.event) + " " +
+            Quote("p:" + group + "/" + probe.event + " " + probe.path + ":" + hex.str()) + "; ";
     }
-    script += identity + " || fail TARGET_CHANGED; echo 1 > \"$i/tracing_on\" || fail TRACE_START; "
+    script += "[ \"$installed\" -gt 0 ] || fail PROBE_NONE_ENABLED; " + identity + " || fail TARGET_CHANGED; echo 1 > \"$i/tracing_on\" || fail TRACE_START; "
         "sleep 0.2 || fail TRACE_WAIT; echo 0 > \"$i/tracing_on\" || fail TRACE_STOP; "
         "trace_text=$(head -c 196609 \"$i/trace\" && printf x) || fail TRACE_READ; "
         "trace_text=${trace_text%x}; [ ${#trace_text} -lt 196609 ] || fail TRACE_TRUNCATED; printf '%s\\n' \"$trace_text\"; " +
         identity + " || fail TARGET_CHANGED; echo TRACE_COMPLETE; ";
     /** @brief root shell 内部也设置时限，避免 su 服务脱离应用进程组后继续保留探针。 */
     auto capture = run("timeout -s TERM 2 sh -c " + Quote(script), 3000);
+    std::istringstream probeLines(capture.output);
+    std::string probeLine, probeReport;
+    while (std::getline(probeLines, probeLine)) {
+        if (probeLine.rfind("VSCOPE_PROBE_", 0) == 0 && probeReport.size() < 2048)
+            probeReport += probeLine.substr(0, 2048 - probeReport.size()) + "\n";
+    }
+    if (diagnostics) (*diagnostics)["graphics_api_probe_report"] = probeReport;
+    note(probeReport);
     /** @brief su 可能不转发取消信号；用独立有界 root 命令保证正常停止后的清理尝试。 */
     const auto settle = capture.success ? std::string{} : std::string{"sleep 2.1; "};
     auto cleaned = run(settle + cleanup + "exit $cleanup_ok", 5000, true);

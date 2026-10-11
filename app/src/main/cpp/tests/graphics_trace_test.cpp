@@ -394,6 +394,56 @@ void driverDispatch() {
     std::filesystem::remove_all(directory);
 }
 
+void partialProbes() {
+    std::atomic<bool> cancel{false};
+    struct stat st{};
+    require(stat(TRACE_FIXTURE, &st) == 0, "fixture stat");
+    const auto directory = std::filesystem::path("/tmp/vscope-partial-" + std::to_string(getpid()));
+    std::filesystem::create_directories(directory / "events/test/bad/filter");
+    std::filesystem::create_directories(directory / "events/test/good");
+    std::ofstream(directory / "events/test/good/filter");
+    std::ofstream(directory / "events/test/good/enable");
+    int calls = 0;
+    Values diagnostics;
+    auto result = TraceGraphics("com.example.game", 0, cancel, [&](const std::string &command, int timeout) {
+        syntax(command, timeout);
+        if (++calls == 1) return CommandResult{true, mappedTarget(TRACE_FIXTURE, st), {}};
+        if (calls == 2) {
+            const auto script = decodedScript(command);
+            const auto start = script.find("installed=0; add_probe()");
+            const auto end = script.find("}; ", start);
+            require(start != std::string::npos && end != std::string::npos, "locate independent probe setup function");
+            auto setup = script.substr(start, end + 3 - start);
+            const auto groupStart = setup.find("/events/") + 8;
+            const auto groupEnd = setup.find('/', groupStart);
+            const auto group = setup.substr(groupStart, groupEnd - groupStart);
+            std::size_t at = 0;
+            while ((at = setup.find(group, at)) != std::string::npos) {
+                setup.replace(at, group.size(), "test");
+                at += 4;
+            }
+            require(script.find("set_event_pid") != std::string::npos &&
+                    script.find("[ \"$pid_count\" -gt 0 ] || fail TARGET_THREADS") != std::string::npos,
+                    "kernel PID filter must contain target threads before enabling any probe");
+            const auto run = RunCommand({"sh", "-c", "fail() { exit 1; }; i=" + Quote(directory.string()) +
+                "; t=" + Quote((directory / "missing").string()) + "; pid_filter=0; f='common_pid == 123'; " + setup +
+                "add_probe missing definition; t=" + Quote(directory.string()) +
+                "; add_probe bad definition; add_probe good definition; [ \"$installed\" -eq 1 ] || exit 1; "
+                "pid_filter=1; add_probe bad definition; [ \"$installed\" -eq 2 ] || exit 1; "}, cancel, 1000);
+            require(run.success && run.output.find("SKIPPED=CREATE:missing") != std::string::npos &&
+                    run.output.find("SKIPPED=FILTER:bad") != std::string::npos &&
+                    run.output.find("ENABLED=good") != std::string::npos && run.output.find("ENABLED=bad") != std::string::npos,
+                    "actual shell skips failed probes and PID-list mode avoids expression filters");
+            return CommandResult{true, run.output + " thread-25 [000] .... 1.2: vk_present_1: (0x1)\nTRACE_COMPLETE\n", {}};
+        }
+        return CommandResult{true, {}, {}};
+    }, &diagnostics);
+    require(calls == 3 && result == "Vulkan (calls observed)", "partial setup failure does not discard valid calls");
+    require(diagnostics.at("graphics_api_probe_report").find("SKIPPED=FILTER:bad") != std::string::npos,
+            "successful captures still preserve skipped probe diagnostics");
+    std::filesystem::remove_all(directory);
+}
+
 void classifications() {
     std::atomic<bool> cancel{false};
     struct stat st{};
@@ -407,6 +457,8 @@ void classifications() {
             Case{{false, "VSCOPE_GRAPHICS_ERROR=TRACEFS_MISSING\n", "failed"}, "trace_unavailable"},
             Case{{false, "VSCOPE_GRAPHICS_ERROR=TRACEFS_DENIED\n", "failed"}, "trace_unavailable"},
             Case{{false, "VSCOPE_GRAPHICS_ERROR=PROBE_CREATE:egl_swap\n", "failed"}, "probe_failed"},
+            Case{{false, "VSCOPE_GRAPHICS_ERROR=PROBE_NONE_ENABLED\n", "failed"}, "probe_failed"},
+            Case{{false, "VSCOPE_GRAPHICS_ERROR=PROBE_PID_FILTER\n", "failed"}, "probe_failed"},
             Case{{false, "VSCOPE_GRAPHICS_ERROR=TARGET_CHANGED\n", "failed"}, "target_unavailable"},
             Case{{false, "VSCOPE_GRAPHICS_ERROR=LIBRARY_IDENTITY\n", "failed"}, "symbols_unavailable"},
             Case{{false, std::string(8192, 'x'), "Command timed out"}, "capture_failed"}}) {
@@ -417,7 +469,7 @@ void classifications() {
             if (calls == 2) return test.result;
             return CommandResult{true, {}, {}};
         }, &diagnostics);
-        const bool mapped = std::string(test.status) == "no_calls" || std::string(test.status) == "trace_unavailable";
+        const bool mapped = std::string(test.status) == "no_calls" || std::string(test.status) == "trace_unavailable" || std::string(test.status) == "probe_failed";
         require(calls == 3 && (mapped ? result.find("calls unconfirmed") != std::string::npos : result.rfind("N/A", 0) == 0),
                 "failed or event-free captures never claim calls and are cleaned");
         require(diagnostics.at("graphics_api_status") == (mapped ? "mapped" : test.status), "loaded evidence distinguished from calls");
@@ -450,7 +502,7 @@ void classifications() {
 }
 }
 int main() {
-    try { symbols(); elf32(); evidence(); lifecycle(); rootFallback(); largeMappings(); realRootProtocol(); driverDispatch(); classifications(); }
+    try { symbols(); elf32(); evidence(); lifecycle(); rootFallback(); largeMappings(); realRootProtocol(); driverDispatch(); partialProbes(); classifications(); }
     catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
     std::cout << "graphics tracing tests passed\n";
 }
