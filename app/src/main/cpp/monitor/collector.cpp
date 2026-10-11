@@ -36,10 +36,10 @@ static std::vector<std::string> paths(const std::string &pattern) {
     std::sort(result.begin(), result.end());
     return result;
 }
-CommandResult Collector::root(const std::string &script, int timeout) {
+CommandResult Collector::root(const std::string &script, int timeout, std::size_t limit) {
     if (runner_)
         return runner_(script, timeout);
-    return RunCommand({"su", "-c", script}, cancel_, timeout);
+    return RunCommand({"su", "-c", script}, cancel_, timeout, limit);
 }
 std::string Collector::read(const std::string &path) {
     auto value = ReadFile(path);
@@ -52,6 +52,10 @@ std::string Collector::read(const std::string &path) {
 }
 void Collector::reset() {
     frames_.reset();
+    latestFrames_ = {};
+    surfaceIdentity_.clear();
+    selectedSurface_.clear();
+    surfaceCursor_ = 0;
     ticks_.reset();
 }
 Values Collector::sample(const Config &config) {
@@ -208,6 +212,9 @@ void Collector::foreground(const Config &c, Values &v) {
                                "app_memory"})
             v[id] = "N/A (" + why + ")";
         frames_.reset();
+        surfaceIdentity_.clear();
+        selectedSurface_.clear();
+        surfaceCursor_ = 0;
     };
     if (!authorized_) {
         unavailable(rootError_);
@@ -274,17 +281,71 @@ void Collector::foreground(const Config &c, Values &v) {
         frames_.reset();
         return;
     }
-    auto list = root("dumpsys SurfaceFlinger --list");
+    presentation(c, *foreground, v);
+}
+void Collector::presentation(const Config &c, const Foreground &foreground, Values &v) {
+    const auto identity = std::to_string(foreground.user) + ":" + foreground.package + ":" + c.surface;
+    if (identity != surfaceIdentity_) {
+        frames_.reset();
+        surfaceIdentity_ = identity;
+        selectedSurface_.clear();
+        surfaceCursor_ = 0;
+    }
+    /** @brief 先过滤目标包再限制输出，避免系统其余图层挤掉列表尾部的游戏图层。 */
+    auto list = root("set -o pipefail; dumpsys SurfaceFlinger --list | { grep -F -e " +
+                        Quote(foreground.package) +
+                        " -e 'Permission Denial' -e 'Permission denied' -e 'Error' "
+                        "-e \"Can't find service\"; query_status=$?; [ \"$query_status\" -le 1 ]; }",
+                     2000, 131072);
     auto candidates =
-        list.success ? Surfaces(list.output, foreground->package, c.surface) : std::vector<std::string>{};
+        list.success ? Surfaces(list.output, foreground.package, c.surface) : std::vector<std::string>{};
+    v["surface_list_query"] = list.success ? "ok" : list.error;
+    if (list.truncated)
+        v["surface_list_query"] += " (output truncated)";
+    v["surface_list_output"] = list.output.substr(0, 16384);
+    v["surface_candidates"] = std::to_string(candidates.size());
+    std::vector<std::string> probes;
+    const auto cached = std::find(candidates.begin(), candidates.end(), selectedSurface_);
+    if (cached != candidates.end())
+        probes.push_back(*cached);
+    else
+        selectedSurface_.clear();
+    /** @brief 固定每轮工作上限并轮转未命中的候选，避免旧容器层永久遮挡后面的缓冲层。 */
+    for (std::size_t checked = 0; checked < candidates.size() && probes.size() < 8; ++checked) {
+        const auto &candidate = candidates[(surfaceCursor_ + checked) % candidates.size()];
+        if (candidate != selectedSurface_)
+            probes.push_back(candidate);
+    }
     Trace best;
     std::string name;
     std::int64_t sampled = 0;
     bool active = false;
-    for (const auto &candidate : candidates) {
-        auto latency = root("dumpsys SurfaceFlinger --latency " + Quote(candidate));
+    std::string failure = !list.success ? "Surface list query failed: " + list.error
+                           : candidates.empty() ? (c.surface.empty() ? "No matching game layers"
+                                                     : "Configured Surface not found for this app")
+                                                : "No valid presentation timestamps";
+    std::string details;
+    const auto deadline = MonotonicNs() + 2500000000LL;
+    std::size_t queried = 0;
+    for (const auto &candidate : probes) {
+        if (cancel_ || MonotonicNs() >= deadline)
+            break;
+        const auto remaining = std::max<std::int64_t>(1, (deadline - MonotonicNs()) / 1000000);
+        auto latency = root("dumpsys SurfaceFlinger --latency " + Quote(candidate),
+                            static_cast<int>(std::min<std::int64_t>(2000, remaining)));
+        ++queried;
+        const auto position = std::find(candidates.begin(), candidates.end(), candidate);
+        if (candidate != selectedSurface_)
+            surfaceCursor_ = (static_cast<std::size_t>(position - candidates.begin()) + 1) % candidates.size();
         auto now = MonotonicNs();
         auto trace = latency.success ? ParseLatency(latency.output, now) : Trace{};
+        const auto reason = !latency.success ? latency.error
+                            : trace.supported ? "actual-present timestamps available"
+                            : latency.output.empty() ? "empty latency output"
+                            : "no valid actual-present timestamps (header-only, zero or pending ring)";
+        details += candidate + "\n  " + reason + "\n  output: " + latency.output.substr(0, 512) + "\n";
+        if (!latency.success)
+            failure = "Surface latency query failed: " + latency.error;
         bool fresh = trace.supported && now - trace.presents.back() <= 1000000000LL;
         if (trace.supported && (!best.supported || (!active && fresh))) {
             best = std::move(trace);
@@ -295,8 +356,14 @@ void Collector::foreground(const Config &c, Values &v) {
         if (active || cancel_)
             break;
     }
+    v["surface_probe_count"] = std::to_string(queried);
+    v["surface_queries"] = std::move(details);
+    /** @brief 无效或过期缓存不得在每轮优先消耗查询预算，否则新缓冲层可能一直超时。 */
+    selectedSurface_ = active ? name : std::string{};
     auto sample =
-        frames_.update(v["foreground_user"] + ":" + foreground->package + ":" + name, best, sampled);
+        frames_.update(v["foreground_user"] + ":" + foreground.package + ":" + name, best, sampled);
+    if (!best.supported)
+        sample.status = failure;
     latestFrames_ = sample;
     const auto na = "N/A (" +
                     (sample.status.empty() ? std::string("no new presentation intervals") : sample.status) +
@@ -308,7 +375,7 @@ void Collector::foreground(const Config &c, Values &v) {
     v["fps_source"] = best.supported
                           ? (sample.truncated ? "SurfaceFlinger actual-present (retained ring only)"
                                               : "SurfaceFlinger actual-present")
-                          : "N/A (SurfaceFlinger unsupported or denied)";
+                          : "N/A (" + failure + ")";
 }
 void Collector::engine(const Config &c, Values &v) {
     if (!c.has("engine_resolution") && !c.has("engine_output") && !c.has("engine_source"))

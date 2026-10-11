@@ -282,8 +282,68 @@ std::optional<Foreground> ParseForeground(const std::string &text, bool activiti
     }
     return result;
 }
+/**
+ * @brief Android 15/16 的 --list 输出调试对象；--latency 仍要求原始 name#id。
+ * @note 仅剥离带有效序号和已知属性尾缀的包装，保留名字内部的空格、括号和属性样式文本。
+ */
+static std::optional<std::string> SurfaceName(const std::string &line) {
+    const std::string prefix = "RequestedLayerState{";
+    if (line.compare(0, prefix.size(), prefix) != 0) {
+        if (line.size() > MaxSurfaceNameBytes || line.find('\0') != std::string::npos)
+            return {};
+        return line;
+    }
+    if (line.size() > MaxSurfaceNameBytes + 1024 || line.back() != '}' ||
+        line.find('\0') != std::string::npos)
+        return {};
+    const auto hash = line.rfind('#');
+    if (hash == std::string::npos || hash <= prefix.size())
+        return {};
+    const auto end = line.size() - 1;
+    std::size_t position = hash + 1;
+    auto digits = [&]() {
+        const auto start = position;
+        while (position < end && line[position] >= '0' && line[position] <= '9')
+            ++position;
+        return position > start;
+    };
+    if (!digits())
+        return {};
+    const auto nameEnd = position;
+    auto consume = [&](const std::string &token) {
+        if (line.compare(position, token.size(), token) != 0)
+            return false;
+        position += token.size();
+        return true;
+    };
+    auto numberAttribute = [&](const std::string &token, bool signedValue = false) {
+        if (!consume(token))
+            return true;
+        if (signedValue && position < end && line[position] == '-')
+            ++position;
+        return digits();
+    };
+    if (!numberAttribute(" parentId=") || !numberAttribute(" relativeParentId="))
+        return {};
+    if (consume(" mirrorId={")) {
+        do {
+            if (!digits() || !consume(","))
+                return {};
+        } while (position < end && line[position] != '}');
+        if (!consume("}"))
+            return {};
+    }
+    consume(" !handle");
+    if (!numberAttribute(" z=", true) || !numberAttribute(" layerStack=") || position != end ||
+        nameEnd - prefix.size() > MaxSurfaceNameBytes)
+        return {};
+    return line.substr(prefix.size(), nameEnd - prefix.size());
+}
 std::vector<std::string> Surfaces(const std::string &text, const std::string &package,
                                   const std::string &overrideName) {
+    const auto overrideSurface = SurfaceName(overrideName);
+    if (package.empty() || !overrideSurface)
+        return {};
     auto contains = [](const std::string &s, const std::string &p) {
         auto token = [](char c) {
             return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.';
@@ -296,26 +356,33 @@ std::vector<std::string> Surfaces(const std::string &text, const std::string &pa
         }
         return false;
     };
+    auto score = [](const std::string &s) {
+        return (s.find("SurfaceView") != std::string::npos ? 100 : 0) +
+               (s.find("BLAST") != std::string::npos ? 20 : 0) -
+               (s.find("Splash") != std::string::npos || s.find("Starting") != std::string::npos ? 100 : 0);
+    };
     std::vector<std::string> result;
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
-        if (contains(line, package) && !contains(line, "dev.snowflake.vulkan") &&
-            (overrideName.empty() || line == overrideName) &&
-            std::find(result.begin(), result.end(), line) == result.end())
-            result.push_back(line);
+        auto normalized = SurfaceName(line);
+        if (!normalized)
+            continue;
+        line = std::move(*normalized);
+        if (!contains(line, package) || contains(line, "dev.snowflake.vulkan") ||
+            (!overrideSurface->empty() && line != *overrideSurface) ||
+            std::find(result.begin(), result.end(), line) != result.end())
+            continue;
+        const auto position = std::find_if(result.begin(), result.end(),
+                                           [&](const auto &candidate) { return score(line) > score(candidate); });
+        if (position != result.end() || result.size() < MaxSurfaceCandidates) {
+            result.insert(position, std::move(line));
+            if (result.size() > MaxSurfaceCandidates)
+                result.pop_back();
+        }
     }
-    auto score = [](const std::string &s) {
-        return (s.find("SurfaceView") != std::string::npos ? 100 : 0) +
-               (s.find("BLAST") != std::string::npos ? 20 : 0) -
-               (s.find("Splash") != std::string::npos || s.find("Starting") != std::string::npos ? 100 : 0);
-    };
-    std::stable_sort(result.begin(), result.end(),
-                     [&](const auto &a, const auto &b) { return score(a) > score(b); });
-    if (result.size() > 4)
-        result.resize(4);
     return result;
 }
 Trace ParseLatency(const std::string &text, std::int64_t now) {

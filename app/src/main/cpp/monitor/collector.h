@@ -16,10 +16,11 @@ class Collector {
     const FrameSample &frameSample() const { return latestFrames_; }
 
   private:
-    CommandResult root(const std::string &script, int timeout = 2000);
+    CommandResult root(const std::string &script, int timeout = 2000, std::size_t limit = 32768);
     std::string read(const std::string &path);
     void hardware(const Config &config, Values &values);
     void foreground(const Config &config, Values &values);
+    void presentation(const Config &config, const Foreground &foreground, Values &values);
     void engine(const Config &config, Values &values);
     const std::atomic<bool> &cancel_;
     CommandRunner runner_;
@@ -28,6 +29,8 @@ class Collector {
     bool traceCleanupFailed_ = false;
     FrameStats frames_;
     FrameSample latestFrames_;
+    std::string surfaceIdentity_, selectedSurface_;
+    std::size_t surfaceCursor_ = 0;
     std::optional<Ticks> ticks_;
 };
 }

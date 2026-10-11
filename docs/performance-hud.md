@@ -37,6 +37,10 @@ Android 仅保留 `MainActivity.java`、`HudService.java` 两个生命周期桥�
 
 CPU 传感器只接受 `/sys/` 路径，不接受 `..` 或 shell 语法。单位系数：µW → `0.000001`，mW → `0.001`，W → `1`。电池节点、频率或温度不能替代 CPU 功率。不可访问或不支持的指标显示 N/A，不推测数据。
 
+图层选择兼容旧版原始名称和 Android 15/16 的 `RequestedLayerState{name#id ...}` 调试描述；发送给 `--latency` 的参数只包含真实 `name#id`。列表先按目标包过滤再做有界捕获，避免无关图层占满输出。最多保留 128 个候选，每轮最多查询 8 个并设置 2.5 秒总查询预算；优先复用仍有新呈现的图层，其余候选轮转探测，失效缓存取消优先级。手动 Surface 仍限定当前包且精确匹配名称，也可粘贴完整调试描述。
+
+诊断记录包含 `surface_list_query`、有界列表原文、候选数、探测数与 `surface_queries`（实际查询名称、命令状态及输出片段），用于区分名称未匹配、命令失败和没有有效 actual-present 时间戳。超出输出上限会注明截断。格式依据 [AOSP Android 16 图层列表与延迟查询](https://github.com/aosp-mirror-neo/platform_frameworks_native/blob/android-16.0.0_r1/services/surfaceflinger/SurfaceFlinger.cpp#L5962) 和 [图层调试名称](https://github.com/aosp-mirror-neo/platform_frameworks_native/blob/android-16.0.0_r1/services/surfaceflinger/FrontEnd/RequestedLayerState.cpp#L421)；不启用或清空系统全局统计。
+
 FPS 统计去除重复、零值、pending 和未来时间戳。换应用、换 Surface、休眠后重新建立基线；没有新帧为 0 FPS，没有有效数据为 N/A。历史环被覆盖时标注 `retained ring only`，仅报告保留下来的呈现节奏。不会清空 SurfaceFlinger 全局统计。
 
 采样在 C++ 工作线程串行执行，500/1000/2000 ms 是每轮完成后的等待间隔；实际周期还包含系统命令耗时。root 授权等待最多 30 秒，普通查询有独立短超时，输出受限且持续排空。停止会取消等待、终止子进程组并 join 工作线程。熄屏暂停采样；撤销悬浮权限会结束会话。

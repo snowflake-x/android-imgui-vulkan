@@ -83,6 +83,8 @@ CommandResult RunCommand(const std::vector<std::string> &args, const std::atomic
         for (int chunk = 0; chunk < 32; ++chunk) {
             ssize_t n = read(pipeFd[0], bytes, sizeof(bytes));
             if (n > 0) {
+                if (static_cast<std::size_t>(n) > limit - result.output.size())
+                    result.truncated = true;
                 if (result.output.size() < limit)
                     result.output.append(bytes, std::min<std::size_t>(n, limit - result.output.size()));
             } else {

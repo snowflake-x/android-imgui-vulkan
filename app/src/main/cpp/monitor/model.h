@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -49,6 +50,13 @@ struct Foreground {
     int user = -1;
 };
 std::optional<Foreground> ParseForeground(const std::string &text, bool activities);
+inline constexpr std::size_t MaxSurfaceCandidates = 128;
+inline constexpr std::size_t MaxSurfaceNameBytes = 4096;
+/**
+ * @brief 归一化 Android 图层名称后返回限定游戏包的去重候选，优先 SurfaceView 与 BLAST 缓冲图层。
+ * @note 保留至多 MaxSurfaceCandidates 个候选，每个名字不超过 MaxSurfaceNameBytes 字节；
+ *       调用方负责跨轮采样预算，不能仅查询固定的前几个候选。
+ */
 std::vector<std::string> Surfaces(const std::string &text, const std::string &package,
                                   const std::string &overrideName);
 struct Trace {
