@@ -21,6 +21,7 @@ const std::vector<Metric> &Metrics() {
                                               {"fps_source", "FPS source", true},
                                               {"surface", "Surface", false},
                                               {"gpu_model", "GPU model", true},
+                                              {"app_memory", "Process memory (RSS)", true},
                                               {"gpu_driver", "GPU driver", false},
                                               {"gpu_api", "GPU API", false},
                                               {"cpu_freq", "CPU clock", true},
@@ -75,11 +76,12 @@ bool SaveConfig(const std::string &path, Config c, std::string &error) {
     c.normalize();
     std::ofstream out(path + ".tmp", std::ios::trunc);
     out.imbue(std::locale::classic());
-    out << "VulkanScopeHUD 1\n"
+    out << "VulkanScopeHUD 2\n"
         << c.root << ' ' << c.interval << ' ' << c.textSize << ' ' << c.opacity << ' ' << c.corner << ' '
         << std::setprecision(17) << c.powerScale << '\n'
         << std::quoted(c.surface) << '\n'
-        << std::quoted(c.powerPath) << '\n';
+        << std::quoted(c.powerPath) << '\n'
+        << c.hudGraph << ' ' << c.hudExtras << '\n';
     for (const auto &id : c.order)
         out << id << ' ' << c.has(id) << '\n';
     out.close();
@@ -97,10 +99,12 @@ Config LoadConfig(const std::string &path) {
     in.imbue(std::locale::classic());
     std::string magic;
     int version;
-    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || version != 1)
+    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version != 1 && version != 2))
         return c;
     if (!(in >> c.root >> c.interval >> c.textSize >> c.opacity >> c.corner >> c.powerScale >>
           std::quoted(c.surface) >> std::quoted(c.powerPath)))
+        return Config{};
+    if (version == 2 && !(in >> c.hudGraph >> c.hudExtras))
         return Config{};
     c.order.clear();
     std::string id;
@@ -310,6 +314,7 @@ FrameSample FrameStats::update(const std::string &key, const Trace &trace, std::
         result.status = "Collecting presentation timestamps";
         return result;
     }
+    result.resetHistory = false;
     auto elapsed = now - sample_, baseline = present_;
     sample_ = now;
     present_ = std::max(present_, latest);
@@ -334,6 +339,7 @@ FrameSample FrameStats::update(const std::string &key, const Trace &trace, std::
                                   : (times.end() - first) * 1e9 / elapsed;
     if (!intervals.empty()) {
         result.mean = std::accumulate(intervals.begin(), intervals.end(), 0.0) / intervals.size();
+        result.intervals = intervals;
         std::sort(intervals.begin(), intervals.end());
         result.p95 = intervals[static_cast<std::size_t>(std::ceil(intervals.size() * .95)) - 1];
     }

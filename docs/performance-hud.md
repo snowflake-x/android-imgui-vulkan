@@ -54,3 +54,16 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 主机 CTest 覆盖插件生命周期、ImGui 配置/软键盘绘制、FPS 环、前台隔离、硬件计数、JSON 校验、配置往返、命令超时/取消/输出上限及线程退出。运行方法见[插件文档](cpp-plugins.md#宿主测试)。Android CI 同时构建两种 ABI 的 APK 并执行 Lint。
 
 真机验收仍需：权限允许/拒绝/撤销、root 拒绝/超时、切换游戏、横竖屏、Activity/Surface 重建、熄屏恢复、透明度和触摸穿透、通知停止、快速启动/停止、旧配置导入、设备实际 SurfaceFlinger 格式与传感器单位。主机测试和 APK 构建不代表上述设备行为已通过。
+
+## 经典 Metal HUD 界面
+
+布局参照用户提供的经典 Metal HUD 截图和 [Apple 官方 HUD 讲解](https://developer.apple.com/videos/play/tech-talks/110339/)，指标含义同时参照 [Metal HUD metrics](https://developer.apple.com/documentation/xcode/understanding-metal-performance-hud-metrics)。悬浮窗、主面板实时预览和配置页共用 `DrawClassicHud`：黑色背景、DejaVu Sans Mono 等宽字体、右对齐固定列、蓝色 Pre、绿色 GPU、异常边界红色、白色竖刻度与底边。字体随 APK 分发，许可证位于 `assets/fonts/LICENSE-DejaVu.txt`。
+
+- 头部显示真实 Vulkan GPU 型号、显示模式分辨率和刷新率；第二行标注 SurfaceFlinger 来源，不伪造 Apple 型号、Direct 合成模式或缩放倍率。显示模式尺寸不等于游戏内部渲染尺寸。
+- Pre 为实际呈现间隔（ms），当前值取最近最多 120 个新间隔均值，FPS 为该均值的倒数。方括号为保留的最多 1200 个历史间隔的极值，曲线展示最近 200 个间隔。重复轮询不添加点；环形缓冲缺口断开曲线，切换应用/用户/Surface、休眠或失效时重置历史。没有新呈现时 FPS 显示 0，Pre 当前值显示 `--`。
+- FPS 下界低于当前值 80%，或 Pre 上界高于当前值 120% 时标红。这是本实现的显示阈值，并非声称复现 Apple 内部算法。
+- Mem 为前台主进程 `/proc/<pid>/status` 的 VmRSS（十进制 MB）；读取由 C++ 发起，需 root，并验证 Android 用户。它不是 PSS、整机内存或 Metal 资源分配大小。GPU 耗时与 GPU 内存尚无可信跨应用来源，显示 `--`，不会使用 GPU 使用率替代毫秒，也不会绘制假零值曲线。
+- **Frame history graph** 控制曲线，**Additional sensor rows** 显示附加指标；核心行保持固定位置，禁用值显示 `--`。其他字段的显示顺序继续由配置控制。主面板的 **Sample details** 保留完整文本采样报告，其轮询区间 FPS 与 HUD 的滚动均值 FPS 口径不同。
+- 配置格式升级为版本 2，兼容读取版本 1，并保留旧字段选择。Android 窗口仍遵守 0.8 的触摸穿透透明度限制，背景滑块在此基础上调整。
+
+主机 `classic_hud_test` 检查滚动统计、历史隔离、缺口与尺寸约束，并可接收一个 PPM 输出路径，从实际 ImGui 三角形和随包字体生成预览；预览中的数值为测试样本，不会进入生产采集路径。

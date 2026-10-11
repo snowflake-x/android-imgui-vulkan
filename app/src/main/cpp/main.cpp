@@ -1,3 +1,4 @@
+#include "monitor/hud_view.h"
 #include <android_native_app_glue.h>
 #include <android/log.h>
 #include <vulkan/vulkan.h>
@@ -129,15 +130,17 @@ static void initialize() {
         clipboard = vulkanscope::PasteText(); return clipboard.c_str();
     };
     float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f);
-    ImFontConfig font; font.SizePixels = 18.0f * scale;
-    io.Fonts->AddFontDefault(&font);
+    vulkanscope::LoadHudFont(18.0f * scale);
     ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
-    style.WindowRounding = 0; style.FrameRounding = 6;
+    style.WindowRounding = 0; style.FrameRounding = 3;
     style.WindowPadding = ImVec2(14, 14); style.ItemSpacing = ImVec2(10, 10);
     style.ScaleAllSizes(scale);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.08f, 0.36f, 0.42f, 1);
-    style.Colors[ImGuiCol_PlotLines] = ImVec4(0.2f, 0.9f, 0.7f, 1);
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.035f, 0.035f, 0.04f, 1);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.19f, 0.21f, 1);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.15f, 0.16f, 0.18f, 1);
+    style.Colors[ImGuiCol_CheckMark] = ImVec4(0.59f, 0.85f, 0.67f, 1);
+    style.Colors[ImGuiCol_PlotLines] = ImVec4(0.38f, 0.62f, 0.83f, 1);
     ImGui_ImplAndroid_Init(app->window);
     ImGui_ImplVulkan_InitInfo init{};
     init.ApiVersion = VK_API_VERSION_1_0;
@@ -159,7 +162,14 @@ static void initialize() {
             vulkanscope::monitor::DrawSettings(*settings);
         },
         [] { vulkanscope::HudAction(env, app->activity->clazz, 1); },
-        [] { vulkanscope::HudAction(env, app->activity->clazz, 2); });
+        [] { vulkanscope::HudAction(env, app->activity->clazz, 2); },
+        [] {
+            using namespace vulkanscope::monitor;
+            const auto config = NativeSession().config();
+            const auto size = MeasureHud(config, ImGui::GetFontSize() * config.textSize / 18.0f, ImGui::GetContentRegionAvail().x, 10000);
+            DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, NativeSession().hud());
+            ImGui::Dummy(ImVec2(size.width, size.height));
+        });
     vulkanscope::RegisterPerformanceHudPlugin(*plugins, std::move(hud));
     plugins->load("host.reports");
     for (const auto& feature : featureSettings) {

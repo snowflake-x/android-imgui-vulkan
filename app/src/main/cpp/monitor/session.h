@@ -1,5 +1,6 @@
 #pragma once
 #include "monitor/collector.h"
+#include "monitor/hud.h"
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -18,6 +19,7 @@ class Session {
     Config config() const;
     bool configure(Config config);
     std::string report() const;
+    HudSnapshot hud() const;
     std::string system() const;
     std::string diagnostics(bool game = false) const;
     std::string rootReport() const;
@@ -41,6 +43,7 @@ class Session {
     std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_, gameDiagnostics_;
     std::string rootReport_ = "Not requested. Root access requires an explicit action.";
     Config config_;
+    HudSnapshot hud_;
     Values gpu_;
     std::function<PlatformSample()> platform_;
     std::atomic<bool> cancel_{true}, rootCancel_{false};

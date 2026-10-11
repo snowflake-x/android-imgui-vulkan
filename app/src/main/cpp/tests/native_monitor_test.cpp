@@ -95,6 +95,8 @@ void config() {
     std::string error;
     Config c;
     c.root = true;
+    c.hudGraph = false;
+    c.hudExtras = true;
     c.surface = "SurfaceView[com.game.app] 'quoted'";
     c.powerPath = "/sys/sensor/value";
     c.textSize = 100;
@@ -103,11 +105,16 @@ void config() {
     c.enabled["fps"] = false;
     require(SaveConfig(path, c, error), "save config");
     auto loaded = LoadConfig(path);
+    require(!loaded.hudGraph && loaded.hudExtras, "persist classic HUD options");
     require(loaded.root && loaded.surface == c.surface && loaded.textSize == 24 && loaded.interval == 1000 &&
                 !loaded.has("fps"),
             "persistence and bounds");
     require(loaded.order.size() == Metrics().size() && loaded.order.front() == "fps", "order deduplication");
     require(!SaveConfig(path + "/missing", c, error), "failed save is reported");
+    std::ofstream(path) << "VulkanScopeHUD 1\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\nfps 0\n";
+    auto legacy = LoadConfig(path);
+    require(legacy.hudGraph && !legacy.hudExtras && !legacy.has("fps") && legacy.corner == 2,
+            "version one preserves selections and adopts classic defaults");
     std::ofstream(path) << "bad config";
     require(!LoadConfig(path).root, "invalid config fails closed");
     std::remove(path.c_str());
@@ -130,6 +137,28 @@ void processes() {
     r = RunCommand({"sh", "-c", "sleep 10"}, cancelled, 10000);
     cancel.join();
     require(!r.success && MonotonicNs() - start < 1000000000LL, "cancellation is prompt");
+}
+void processMemory() {
+    std::atomic<bool> cancelled{false};
+    int user = 10;
+    Collector collector(cancelled, [&](const std::string &script, int) {
+        if (script == "id -u") return CommandResult{true, "0\n", ""};
+        if (script == "dumpsys activity activities")
+            return CommandResult{true, "topResumedActivity=ActivityRecord{cd u10 com.game.app/.Play}", ""};
+        if (script == "pidof 'com.game.app'") return CommandResult{true, "123\n", ""};
+        if (script == "cat /proc/123/status")
+            return CommandResult{true, "Uid:\t" + std::to_string(user * 100000 + 12345) + "\nVmRSS:\t1024 kB\n", ""};
+        return CommandResult{};
+    });
+    Config config;
+    for (auto &item : config.enabled) item.second = false;
+    config.root = true;
+    config.enabled["app_memory"] = true;
+    auto values = collector.sample(config);
+    require(values["app_memory_mb"] == "1.05", "RSS converts KiB to decimal MB");
+    user = 11;
+    values = collector.sample(config);
+    require(values.count("app_memory_mb") == 0, "reject process from another Android user");
 }
 void authorization() {
     std::atomic<bool> cancelled{false};
@@ -205,6 +234,7 @@ int main() {
         processes();
         lifecycle();
         authorization();
+        processMemory();
         systemSnapshots();
         std::cout << "Native monitor regression tests passed\n";
     } catch (const std::exception &e) {

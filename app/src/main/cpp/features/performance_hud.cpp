@@ -51,7 +51,13 @@ void RegisterPerformanceHudPlugin(plugin::Runtime& runtime,
                 host.borrow([](HostPerformanceHud& value) { value.stop(); });
                 state->initialized = false;
             }
-            ImGui::TextWrapped("%s", state->text.c_str());
+            bool preview = false;
+            if (!state->settings) host.borrow([&](HostPerformanceHud& value) { preview = value.preview(); });
+            if (!preview && !state->settings) ImGui::TextWrapped("%s", state->text.c_str());
+            if (ImGui::TreeNode("Sample details")) {
+                ImGui::TextWrapped("%s", state->text.c_str());
+                ImGui::TreePop();
+            }
             if (state->settings) host.borrow([](HostPerformanceHud& value) { value.configure(); });
             ImGui::PopID();
         });

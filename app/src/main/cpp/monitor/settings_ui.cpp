@@ -1,6 +1,7 @@
 #include "monitor/settings_ui.h"
 #include "imgui.h"
 #include "monitor/session.h"
+#include "monitor/hud_view.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -52,7 +53,12 @@ void DrawSettings(SettingsState &state) {
     auto &session = NativeSession();
     auto config = session.config();
     bool changed = false;
-    ImGui::SeparatorText("Native HUD configuration");
+    ImGui::SeparatorText("Classic Metal HUD");
+    const auto size = MeasureHud(config, ImGui::GetFontSize() * config.textSize / 18.0f, ImGui::GetContentRegionAvail().x, 10000);
+    DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, session.hud());
+    ImGui::Dummy(ImVec2(size.width, size.height));
+    changed |= ImGui::Checkbox("Frame history graph", &config.hudGraph);
+    changed |= ImGui::Checkbox("Additional sensor rows", &config.hudExtras);
     changed |= ImGui::Checkbox("Enable read-only root sampling", &config.root);
     ImGui::TextWrapped("Root is optional. FPS and engine inspection need an existing su provider. Enabling "
                        "this option authorizes read-only queries while the HUD runs. To retry a denied "
@@ -70,6 +76,7 @@ void DrawSettings(SettingsState &state) {
     ImGui::TextWrapped(
         "Changes are saved in native storage. The overlay is touch-through; configure it here.");
     if (ImGui::TreeNode("Fields and display order")) {
+        ImGui::TextWrapped("Core rows keep their classic positions. Disabled values show --. Enable Additional sensor rows to show other fields in the order below.");
         for (std::size_t i = 0; i < config.order.size(); ++i) {
             const auto id = config.order[i];
             auto metric =

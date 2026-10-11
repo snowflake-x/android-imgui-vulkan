@@ -1,4 +1,6 @@
+#include <android/asset_manager_jni.h>
 #include "platform/android_bridge.h"
+#include "monitor/hud_view.h"
 #include "platform/overlay_renderer.h"
 #include <android/log.h>
 #include <android/native_window_jni.h>
@@ -329,6 +331,32 @@ std::string PasteText() {
         static_cast<jstring>(e->CallObjectMethod(text, method(e, text, "toString", "()Ljava/lang/String;")));
     return exception(e) ? std::string{} : utf(e, string);
 }
+void LoadHudFont(float pixels) {
+    Jni j;
+    auto *e = j.env;
+    AAsset *asset = nullptr;
+    if (e && context) {
+        auto manager = e->CallObjectMethod(context, method(e, context, "getAssets", "()Landroid/content/res/AssetManager;"));
+        if (!exception(e) && manager) {
+            auto *native = AAssetManager_fromJava(e, manager);
+            if (native) asset = AAssetManager_open(native, "fonts/DejaVuSansMono.ttf", AASSET_MODE_BUFFER);
+        }
+    }
+    if (asset) {
+        const auto length = AAsset_getLength(asset);
+        void *data = length > 0 ? ImGui::MemAlloc(length) : nullptr;
+        const bool read = data && AAsset_read(asset, data, length) == length;
+        AAsset_close(asset);
+        if (read) {
+            ImGui::GetIO().Fonts->AddFontFromMemoryTTF(data, static_cast<int>(length), pixels);
+            return;
+        }
+        ImGui::MemFree(data);
+    }
+    ImFontConfig font;
+    font.SizePixels = pixels;
+    ImGui::GetIO().Fonts->AddFontDefault(&font);
+}
 void HudAction(JNIEnv *env, jobject activity, int action) {
     auto id = method(env, activity, "hudAction", "(I)V");
     if (id)
@@ -366,16 +394,10 @@ extern "C" JNIEXPORT jintArray JNICALL Java_dev_snowflake_vulkan_HudService_nati
                                                                                            jint height,
                                                                                            jfloat density) {
     const auto c = monitor::NativeSession().config();
-    int count = 0;
-    for (const auto &m : monitor::Metrics())
-        if (c.has(m.id))
-            ++count;
+    const auto size = monitor::MeasureHud(c, c.textSize * density, width, height);
     int gravity[] = {48 | 3, 48 | 5, 80 | 3, 80 | 5};
-    jint values[] = {
-        std::max(1, std::min(width, static_cast<int>(420 * density))),
-        std::max(1, std::min(height, static_cast<int>((std::max(count, 1) * (c.textSize * 1.3f + 3) + 28) *
-                                                      density))),
-        gravity[c.corner]};
+    jint values[] = {std::max(1, static_cast<int>(std::ceil(size.width))),
+                     std::max(1, static_cast<int>(std::ceil(size.height))), gravity[c.corner]};
     auto result = e->NewIntArray(3);
     e->SetIntArrayRegion(result, 0, 3, values);
     return result;
@@ -399,22 +421,17 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSur
             }
             while (!overlayCancel) {
                 auto config = monitor::NativeSession().config();
-                auto text = monitor::NativeSession().report();
+                auto snapshot = monitor::NativeSession().hud();
                 bool visible = monitor::NativeSession().interactive();
                 {
                     std::lock_guard<std::mutex> lock(ImGuiMutex());
                     renderer.render([&] {
                         if (!visible)
                             return;
-                        ImGui::SetNextWindowPos(ImVec2(0, 0));
-                        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-                        ImGui::SetNextWindowBgAlpha(config.opacity / 100.0f);
-                        ImGui::Begin("Performance HUD", nullptr,
-                                     ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
-                                         ImGuiWindowFlags_NoSavedSettings);
-                        ImGui::SetWindowFontScale(config.textSize / 14.0f);
-                        ImGui::TextUnformatted(text.c_str());
-                        ImGui::End();
+                        const auto display = ImGui::GetIO().DisplaySize;
+                        const auto size = monitor::MeasureHud(config, config.textSize * density, display.x, display.y);
+                        monitor::DrawClassicHud(*ImGui::GetForegroundDrawList(), ImVec2(0, 0), size, config, snapshot);
+
                     });
                 }
                 std::unique_lock<std::mutex> lock(overlayWaitMutex);

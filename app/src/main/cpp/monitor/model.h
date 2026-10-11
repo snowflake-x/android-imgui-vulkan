@@ -15,6 +15,7 @@ struct Metric {
 const std::vector<Metric> &Metrics();
 struct Config {
     bool root = false;
+    bool hudGraph = true, hudExtras = false;
     int interval = 1000, textSize = 14, opacity = 80, corner = 0;
     std::string surface, powerPath;
     double powerScale = 0.000001;
@@ -53,7 +54,8 @@ struct Trace {
 Trace ParseLatency(const std::string &text, std::int64_t now);
 struct FrameSample {
     std::optional<double> fps, mean, p95;
-    bool truncated = false;
+    bool truncated = false, resetHistory = true;
+    std::vector<double> intervals;
     std::string status;
 };
 /** @brief 仅由采样线程持有，切换应用/Surface 或休眠后重置基线。 */

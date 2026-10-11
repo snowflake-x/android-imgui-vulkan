@@ -1,6 +1,7 @@
 #include "platform/overlay_renderer.h"
 #include "imgui_impl_vulkan.h"
 #include "monitor/model.h"
+#include "platform/android_bridge.h"
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
@@ -84,9 +85,7 @@ void OverlayRenderer::initialize(ANativeWindow *surfaceWindow, float scale) {
     ImGui::SetCurrentContext(context);
     auto &io = ImGui::GetIO();
     io.IniFilename = nullptr;
-    ImFontConfig font;
-    font.SizePixels = 14.0f * scale;
-    io.Fonts->AddFontDefault(&font);
+    LoadHudFont(24.0f * scale);
     ImGui::StyleColorsDark();
     auto &style = ImGui::GetStyle();
     style.WindowRounding = 0;

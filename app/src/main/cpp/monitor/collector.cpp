@@ -181,6 +181,7 @@ void Collector::hardware(const Config &c, Values &v) {
     }
 }
 void Collector::foreground(const Config &c, Values &v) {
+    latestFrames_ = {};
     auto unavailable = [&](const std::string &why) {
         for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface"})
             v[id] = "N/A (" + why + ")";
@@ -203,6 +204,34 @@ void Collector::foreground(const Config &c, Values &v) {
     }
     v["foreground"] = foreground->package;
     v["foreground_user"] = std::to_string(foreground->user);
+    if (c.has("app_memory")) {
+        v["app_memory"] = "N/A (process RSS unavailable)";
+        auto pids = root("pidof " + Quote(foreground->package));
+        std::istringstream ids(pids.success ? pids.output : "");
+        int pid = 0;
+        for (int attempt = 0; attempt < 16 && ids >> pid && !cancel_; ++attempt) {
+            if (pid <= 0) continue;
+            auto status = root("cat /proc/" + std::to_string(pid) + "/status");
+            if (!status.success) continue;
+            std::istringstream lines(status.output);
+            std::string line;
+            long long uid = -1;
+            double rss = -1;
+            while (std::getline(lines, line)) {
+                if (line.rfind("Uid:", 0) == 0) { std::istringstream field(line.substr(4)); field >> uid; }
+                if (line.rfind("VmRSS:", 0) == 0) {
+                    std::istringstream field(line.substr(6));
+                    double amount; std::string unit;
+                    if (field >> amount >> unit && unit == "kB") rss = amount;
+                }
+            }
+            if (uid >= 0 && uid / 100000 == foreground->user && std::isfinite(rss) && rss >= 0) {
+                v["app_memory_mb"] = Format(rss * 1024 / 1000000, 2);
+                v["app_memory"] = v["app_memory_mb"] + " MB RSS (main process)";
+                break;
+            }
+        }
+    }
     if (!c.has("fps") && !c.has("frame_time") && !c.has("frame_p95") && !c.has("fps_source") &&
         !c.has("surface")) {
         frames_.reset();
@@ -231,6 +260,7 @@ void Collector::foreground(const Config &c, Values &v) {
     }
     auto sample =
         frames_.update(v["foreground_user"] + ":" + foreground->package + ":" + name, best, sampled);
+    latestFrames_ = sample;
     const auto na = "N/A (" +
                     (sample.status.empty() ? std::string("no new presentation intervals") : sample.status) +
                     ")";

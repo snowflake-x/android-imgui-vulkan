@@ -13,6 +13,7 @@ class Collector {
         : cancel_(cancel), runner_(std::move(runner)) {}
     Values sample(const Config &config);
     void reset();
+    const FrameSample &frameSample() const { return latestFrames_; }
 
   private:
     CommandResult root(const std::string &script, int timeout = 2000);
@@ -25,6 +26,7 @@ class Collector {
     bool opted_ = false, authorized_ = false;
     std::string rootError_;
     FrameStats frames_;
+    FrameSample latestFrames_;
     std::optional<Ticks> ticks_;
 };
 }

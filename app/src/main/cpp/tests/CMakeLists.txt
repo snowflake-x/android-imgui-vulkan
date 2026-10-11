@@ -31,18 +31,24 @@ target_include_directories(performance_hud_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(performance_hud_test PRIVATE Threads::Threads)
 
 add_executable(native_monitor_test native_monitor_test.cpp ../monitor/model.cpp ../monitor/process.cpp
-    ../monitor/collector.cpp ../monitor/session.cpp)
+    ../monitor/collector.cpp ../monitor/session.cpp ../monitor/hud.cpp)
 target_include_directories(native_monitor_test PRIVATE ..)
 target_link_libraries(native_monitor_test PRIVATE Threads::Threads)
 
-add_executable(native_settings_test native_settings_test.cpp ../monitor/settings_ui.cpp
-    ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/session.cpp
+add_executable(native_settings_test native_settings_test.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
+    ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/session.cpp ../monitor/hud.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
 target_include_directories(native_settings_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(native_settings_test PRIVATE Threads::Threads)
 
-foreach(test_target plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
+add_executable(classic_hud_test classic_hud_test.cpp ../monitor/hud.cpp ../monitor/hud_view.cpp ../monitor/model.cpp
+    ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
+    ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(classic_hud_test PRIVATE .. ../vendor/imgui)
+target_compile_definitions(classic_hud_test PRIVATE HUD_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../assets/fonts/DejaVuSansMono.ttf")
+
+foreach(test_target classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

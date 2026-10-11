@@ -18,14 +18,18 @@ public:
     HostPerformanceHud(std::function<std::string()> readReport,
                        std::function<void()> configure,
                        std::function<void()> start,
-                       std::function<void()> stop)
+                       std::function<void()> stop,
+                       std::function<void()> drawPreview = {})
         : readReport_(std::move(readReport)), configure_(std::move(configure)),
-          start_(std::move(start)), stop_(std::move(stop)) {}
+          start_(std::move(start)), stop_(std::move(stop)), drawPreview_(std::move(drawPreview)) {}
 
     /**
      * @brief 返回最近的采集快照；不启动服务、采集任务或权限请求。
      */
     std::string report() const { return readReport_(); }
+
+    /** @brief 绘制宿主提供的实时预览；未提供时由插件显示文本报告。 */
+    bool preview() const { if (!drawPreview_) return false; drawPreview_(); return true; }
 
     /**
      * @brief 在当前 ImGui 帧内绘制已展开的原生 HUD 配置。
@@ -47,6 +51,7 @@ private:
     const std::function<void()> configure_;
     const std::function<void()> start_;
     const std::function<void()> stop_;
+    const std::function<void()> drawPreview_;
 };
 
 /**

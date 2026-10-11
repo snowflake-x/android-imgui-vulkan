@@ -36,6 +36,17 @@ bool Session::configure(Config c) {
     wake_.notify_all();
     return true;
 }
+HudSnapshot Session::hud() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto result = hud_;
+    if (cancel_ || MonotonicNs() - result.capturedNs > std::max(5000, config_.interval * 3) * 1000000LL) {
+        result = {};
+        result.values = hud_.values;
+        result.status = cancel_ ? "Capture stopped" : "Waiting for a fresh sample";
+    }
+    result.values.insert(gpu_.begin(), gpu_.end());
+    return result;
+}
 std::string Session::report() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return report_;
@@ -81,6 +92,7 @@ void Session::start() {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         failed_ = false;
+        hud_ = {};
     }
     cancel_ = false;
     setError("Starting native performance capture...");
@@ -152,6 +164,7 @@ void Session::requestRoot() {
 }
 void Session::collect() {
     Collector collector(cancel_);
+    HudHistory history;
     while (!cancel_) {
         const auto c = config();
         try {
@@ -167,6 +180,7 @@ void Session::collect() {
             }
             if (!platform.interactive) {
                 collector.reset();
+                history.reset();
                 setError("Screen off; sampling paused");
             } else {
                 auto values = collector.sample(c);
@@ -178,6 +192,7 @@ void Session::collect() {
                 if (cancel_)
                     break;
                 values.insert(gpu_.begin(), gpu_.end());
+                hud_ = history.update(values, collector.frameSample(), MonotonicNs());
                 report_ = Report(c, values);
                 std::ostringstream text;
                 text << system_ << "\nSample CLOCK_BOOTTIME ms: " << BootMs() << "\nRoot opt-in: " << c.root
@@ -190,6 +205,8 @@ void Session::collect() {
                     gameDiagnostics_ = diagnostics_;
             }
         } catch (const std::exception &e) {
+            history.reset();
+            collector.reset();
             setError(std::string("Native sampling error: ") + e.what());
         }
         std::unique_lock<std::mutex> lock(mutex_);

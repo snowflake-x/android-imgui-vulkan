@@ -139,6 +139,22 @@ void snapshotsThrottleAndReloadStartsFresh(const std::string& report) {
             "rendering and lifecycle must never start permissions, a sampler, or stop a host session");
 }
 
+void nativePreviewHasNoHostActions() {
+    HeadlessGui gui;
+    Runtime runtime;
+    int previews = 0, actions = 0;
+    auto host = std::make_shared<HostPerformanceHud>([] { return "sample"; },
+        [&] { ++actions; }, [&] { ++actions; }, [&] { ++actions; },
+        [&] { ++previews; ImGui::TextUnformatted("native preview"); });
+    RegisterPerformanceHudPlugin(runtime, host);
+    runtime.load("performance-hud");
+    gui.render(runtime, 0);
+    require(previews == 1 && actions == 0, "native preview only draws; no permissions or session actions");
+    runtime.unload("performance-hud");
+    gui.render(runtime, 1);
+    require(previews == 1, "unloading revokes preview callback");
+}
+
 void graphicsTeardownPreservesUserSession() {
     HostObservation observation;
     auto host = createHost(observation);
@@ -167,8 +183,9 @@ void graphicsTeardownPreservesUserSession() {
 }
 
 int main() {
-    const std::array<std::pair<const char*, void (*)()>, 4> tests{{
+    const std::array<std::pair<const char*, void (*)()>, 5> tests{{
         {"registration and lifecycle have no host actions", registrationAndLifecycleHaveNoHostActions},
+        {"native preview has no host actions", nativePreviewHasNoHostActions},
         {"HUD snapshots throttle and reset", [] { snapshotsThrottleAndReloadStartsFresh("report"); }},
         {"empty HUD snapshots still throttle", [] { snapshotsThrottleAndReloadStartsFresh(""); }},
         {"graphics teardown preserves the user session", graphicsTeardownPreservesUserSession}
