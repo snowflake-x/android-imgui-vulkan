@@ -11,6 +11,10 @@ namespace vulkanscope {
 namespace {
 constexpr std::array<const char *, 3> ids{"device-info", "gpu-info", "performance-hud"};
 constexpr std::array<const char *, 3> labels{"Screen & device", "Vulkan GPU", "Foreground performance HUD"};
+constexpr std::array<const char *, 3> descriptions{
+    "Screen, device and Android system information.",
+    "Vulkan device, driver and supported API information.",
+    "Native foreground performance monitoring and HUD display."};
 }
 std::string JsonString(const std::string &value) {
     const char hex[] = "0123456789abcdef";
@@ -58,7 +62,7 @@ std::string Manager::snapshot(ui::Language language) {
     for (unsigned i = 0; i < ids.size(); ++i) {
         if (i) out << ',';
         out << "{\"id\":" << text(ids[i]) << ",\"label\":" << text(ui::Text(language, labels[i]))
-            << ",\"description\":" << text(ui::Text(language, (std::string(labels[i]) + " description").c_str()))
+            << ",\"description\":" << text(language == ui::Language::Chinese ? ui::Text(language, (std::string(labels[i]) + " description").c_str()) : descriptions[i])
             << ",\"enabled\":" << (runtime_.isLoaded(ids[i]) ? "true" : "false") << '}';
     }
     out << "],\"metrics\":[";
