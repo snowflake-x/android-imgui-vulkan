@@ -365,13 +365,17 @@ static void command(android_app*, int32_t cmd) {
         reloadFonts = true;
     }
     if (cmd == APP_CMD_CONFIG_CHANGED) {
+        if (ready) vulkanscope::ui::CancelPageTouch(navigation);
         const float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f) * vulkanscope::ReadSystemFontScale();
         if (ready) ImGui::GetStyle().ScaleAllSizes(scale / uiScale);
         uiScale = scale;
         systemLocale = vulkanscope::ReadSystemLocale();
         reloadFonts = true;
     }
-    if (cmd == APP_CMD_LOST_FOCUS) focused = false;
+    if (cmd == APP_CMD_LOST_FOCUS) {
+        focused = false;
+        if (ready) vulkanscope::ui::CancelPageTouch(navigation);
+    }
     if (cmd == APP_CMD_WINDOW_RESIZED || cmd == APP_CMD_CONTENT_RECT_CHANGED) rebuild = true;
 }
 void android_main(android_app* state) {
@@ -382,6 +386,11 @@ void android_main(android_app* state) {
     app->onInputEvent = [](android_app*, AInputEvent* event) -> int32_t {
         std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex());
         if (mainContext) ImGui::SetCurrentContext(mainContext);
+        if (ready && AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION &&
+            (AMotionEvent_getAction(event) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_CANCEL) {
+            vulkanscope::ui::CancelPageTouch(navigation);
+            return 1;
+        }
         return ready ? ImGui_ImplAndroid_HandleInputEvent(event) : 0;
     };
     bool failed = false;

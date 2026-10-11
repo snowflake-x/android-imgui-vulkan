@@ -66,7 +66,12 @@ target_include_directories(graphics_trace_test PRIVATE ..)
 target_compile_definitions(graphics_trace_test PRIVATE TRACE_FIXTURE="$<TARGET_FILE:graphics_trace_fixture>")
 add_dependencies(graphics_trace_test graphics_trace_fixture)
 
-foreach(test_target graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
+add_executable(navigation_touch_test navigation_touch_test.cpp ../ui/navigation.cpp ../ui/i18n.cpp
+    ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
+    ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(navigation_touch_test PRIVATE .. ../vendor/imgui)
+
+foreach(test_target navigation_touch_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
