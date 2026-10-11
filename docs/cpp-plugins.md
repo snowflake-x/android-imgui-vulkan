@@ -70,10 +70,18 @@ stateDiagram-v2
 | `frame-metrics` | 帧率、帧耗时和历史曲线 | 无 |
 | `device-info` | 系统报告和渲染表面尺寸 | `host.reports` |
 | `gpu-info` | GPU、驱动和交换链信息 | 无 |
+| `host.performance-hud` | 提供宿主只读 HUD 快照和显式用户操作 | 无 |
+| `performance-hud` | 前台应用性能 HUD 的配置、启停和报告面板 | `host.performance-hud` |
 
 宿主在 ImGui 帧内发送 `RenderFrame`。事件携带数值和字符串快照，不暴露 `JNIEnv*`、`VkDevice`、窗口指针或其他宿主原始句柄。插件卸载时，曲线与报告缓存一起释放，再次加载得到新的插件状态。
 
 `HostReports` 封装只读的 `std::function<std::string()>` 系统报告能力，JNI 调用的实现和生命周期仍归宿主所有。宿主显式加载 `host.reports` 作为基础服务，因此关闭 `device-info` 时报告服务仍存在。报告由事件回调按需读取，加载和卸载不发起 root 请求。root 诊断保留为宿主拥有的显式按钮动作。
+
+[`features/performance_hud.h`](../app/src/main/cpp/features/performance_hud.h) 的 `HostPerformanceHud` 提供相同的类型服务边界：界面每秒读取一次 Android 已生成的 HUD 报告快照，只有用户点击 **Configure**、**Start HUD** 或 **Stop HUD** 才转发相应动作。登记、加载、帧渲染和运行时清理都不会自动请求 root 或启动采集。`frame-metrics` 仍仅报告本应用 ImGui 渲染速率；前台应用指标来自独立 HUD 采集器，不复用该速率。
+
+采集会话由 Android 宿主前台服务拥有。用户需要先点击 **Start HUD**，再切换到游戏；这时 NativeActivity 的 Surface 可能被销毁，因此 `performance-hud` 卸载或 `Runtime::clear()` 只回收自身报告缓存和监听，不能停止用户明确启动的会话。会话由 **Stop HUD**、通知停止动作或用户取消 **Plugins → Foreground performance HUD** 开关结束。开关停用动作在插件事件分发结束后立即请求宿主停止，再于下一帧卸载插件，确保下帧前的 Surface 销毁也不会丢失停用意图。程序化运行时卸载本身不等同于用户停止会话。
+
+Vulkan 物理设备查询得到的 GPU 型号、原始十六进制 `driverVersion` 和 Vulkan API 版本由宿主发布给 Android HUD；驱动版本不套用通用的三段版本解码。实际帧率、CPU 功耗及引擎内部渲染分辨率依赖采集来源及设备支持，报告必须保留不可用状态，不能用本应用帧率、屏幕分辨率或整机电池功耗替代。
 
 界面开关先记录用户意图，在下一帧开始、事件分发之外应用加载或卸载。运行时不会在正在执行的回调里销毁插件；在事件分发、服务借用、初始化或清理过程中直接重入生命周期操作会被拒绝。
 
@@ -178,4 +186,4 @@ cmake --build /tmp/vulkanscope-plugin-tests --parallel
 ctest --test-dir /tmp/vulkanscope-plugin-tests --output-on-failure
 ```
 
-`plugin_runtime_test` 验证生命周期、事务回滚、依赖、服务和事件的行为；`builtin_plugins_test` 在无 Android 窗口的 ImGui 环境中验证内置插件。Sanitizer 选项在 GCC 和 Clang 下启用 AddressSanitizer 与 UndefinedBehaviorSanitizer；不支持的工具链可关闭该选项。Android 表面重建、JNI 及实际 GPU 呈现仍需设备集成验证。
+`plugin_runtime_test` 验证生命周期、事务回滚、依赖、服务和事件的行为；`builtin_plugins_test` 在无 Android 窗口的 ImGui 环境中验证内置插件。`performance_hud_test` 验证 HUD 加载与清理不触发宿主操作、报告每秒刷新、卸载撤销监听、重载重建缓存，以及图形生命周期结束后用户启动的宿主会话继续存在。Sanitizer 选项在 GCC 和 Clang 下启用 AddressSanitizer 与 UndefinedBehaviorSanitizer；不支持的工具链可关闭该选项。Android 表面重建、JNI 及实际 GPU 呈现仍需设备集成验证。

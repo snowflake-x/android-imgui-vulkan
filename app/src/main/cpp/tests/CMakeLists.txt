@@ -20,7 +20,17 @@ add_executable(builtin_plugins_test builtin_plugins_test.cpp
 target_include_directories(builtin_plugins_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(builtin_plugins_test PRIVATE Threads::Threads)
 
-foreach(test_target plugin_runtime_test builtin_plugins_test)
+add_executable(performance_hud_test performance_hud_test.cpp
+    ../features/performance_hud.cpp
+    ../plugin/runtime.cpp
+    ../vendor/imgui/imgui.cpp
+    ../vendor/imgui/imgui_draw.cpp
+    ../vendor/imgui/imgui_tables.cpp
+    ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(performance_hud_test PRIVATE .. ../vendor/imgui)
+target_link_libraries(performance_hud_test PRIVATE Threads::Threads)
+
+foreach(test_target plugin_runtime_test builtin_plugins_test performance_hud_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <jni.h>
 #include <algorithm>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -12,6 +13,7 @@
 #include "imgui_impl_android.h"
 #include "imgui_impl_vulkan.h"
 #include "features/builtin_plugins.h"
+#include "features/performance_hud.h"
 
 static android_app* app;
 static JNIEnv* env;
@@ -32,7 +34,8 @@ static struct FeatureSetting {
 } featureSettings[] = {
     {"frame-metrics", "Frame metrics", true},
     {"device-info", "Screen & device", true},
-    {"gpu-info", "Vulkan GPU", true}
+    {"gpu-info", "Vulkan GPU", true},
+    {"performance-hud", "Foreground performance HUD", true}
 };
 static std::vector<std::pair<std::string, bool>> pluginChanges;
 static std::string pluginError, rootReport;
@@ -116,6 +119,12 @@ static void initialize() {
     }
     if (!gpu) throw std::runtime_error("No Vulkan graphics/present queue available");
     vkGetPhysicalDeviceProperties(gpu, &properties);
+    char gpuReport[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE + 64];
+    std::snprintf(gpuReport, sizeof(gpuReport), "%s\n0x%08x\n%u.%u.%u",
+                  properties.deviceName, properties.driverVersion,
+                  VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
+                  VK_VERSION_PATCH(properties.apiVersion));
+    javaCall("publishGpuInfo", gpuReport);
     float priority = 1.0f;
     VkDeviceQueueCreateInfo q{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     q.queueFamilyIndex = family; q.queueCount = 1; q.pQueuePriorities = &priority;
@@ -156,6 +165,12 @@ static void initialize() {
     plugins = std::make_unique<vulkanscope::plugin::Runtime>();
     auto reports = std::make_shared<vulkanscope::HostReports>([] { return javaText("getSystemReport"); });
     vulkanscope::RegisterBuiltinPlugins(*plugins, std::move(reports));
+    auto hud = std::make_shared<vulkanscope::HostPerformanceHud>(
+        [] { return javaText("getHudReport"); },
+        [] { javaCall("openHudSettings"); },
+        [] { javaCall("startPerformanceHud"); },
+        [] { javaCall("stopPerformanceHud"); });
+    vulkanscope::RegisterPerformanceHudPlugin(*plugins, std::move(hud));
     plugins->load("host.reports");
     for (const auto& feature : featureSettings) {
         if (feature.enabled) plugins->load(feature.id);
@@ -186,6 +201,11 @@ static void pluginControls() {
     for (auto& feature : featureSettings) {
         bool enabled = plugins->isLoaded(feature.id);
         if (ImGui::Checkbox(feature.label, &enabled)) {
+            /**
+             * @brief 用户禁用立即停止宿主会话，避免下帧前 Surface 销毁丢失停用意图。
+             * @note 这里已退出插件事件分发；普通插件清理只释放界面缓存和监听。
+             */
+            if (!enabled && std::string(feature.id) == "performance-hud") javaCall("stopPerformanceHud");
             pluginChanges.emplace_back(feature.id, enabled);
             feature.enabled = enabled;
         }

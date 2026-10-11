@@ -2,6 +2,7 @@ package dev.snowflake.vulkan
 
 import android.app.ActivityManager
 import android.app.NativeActivity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.DisplayMetrics
@@ -61,6 +62,53 @@ class MainActivity : NativeActivity() {
 
     /** @return 后台线程最近发布的诊断快照，不等待命令完成。 */
     fun getRootReport(): String = rootReport
+
+    /**
+     * 读取前台服务发布的快照，渲染线程不会执行 shell 或传感器采样。
+     */
+    fun getHudReport(): String = HudService.latestNativeReport
+
+    /**
+     * 从插件的显式用户动作打开持久化 HUD 配置。
+     */
+    fun openHudSettings() {
+        runOnUiThread {
+            if (!destroyed) startActivity(Intent(this, HudSettingsActivity::class.java))
+        }
+    }
+
+    /**
+     * 用户主动启动宿主管理的监控会话；缺少悬浮权限时进入配置页。
+     * 会话可跨 Surface 销毁和前后台切换，在停止按钮或通知动作中结束。
+     */
+    fun startPerformanceHud() {
+        runOnUiThread {
+            if (!destroyed && !HudService.start(this)) {
+                startActivity(Intent(this, HudSettingsActivity::class.java))
+            }
+        }
+    }
+
+    /**
+     * 显式停止独立于渲染表面存活的 HUD 会话。
+     */
+    fun stopPerformanceHud() {
+        runOnUiThread { HudService.stop(applicationContext) }
+    }
+
+    /**
+     * 缓存 Vulkan 实测硬件元数据，使应用进入后台后 HUD 仍可显示。
+     * @param report GPU 名称、原始驱动版本和 Vulkan API 版本，按换行分隔。
+     */
+    fun publishGpuInfo(report: String) {
+        val fields = report.split('\n', limit = 3)
+        if (fields.size != 3) return
+        getSharedPreferences("performance_hud", MODE_PRIVATE).edit()
+            .putString("gpu_model", fields[0])
+            .putString("gpu_driver", fields[1])
+            .putString("gpu_api", fields[2])
+            .apply()
+    }
 
     /**
      * 将原生错误投递到 UI 线程显示，然后关闭 Activity。

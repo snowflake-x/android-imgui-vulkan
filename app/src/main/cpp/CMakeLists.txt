@@ -9,7 +9,7 @@ target_include_directories(vulkanscope_plugins PUBLIC ${CMAKE_CURRENT_SOURCE_DIR
 set(IMGUI ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui)
 add_library(native_app_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 target_include_directories(native_app_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
-add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp
+add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp features/performance_hud.cpp
     ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp ${IMGUI}/imgui_widgets.cpp
     ${IMGUI}/backends/imgui_impl_android.cpp ${IMGUI}/backends/imgui_impl_vulkan.cpp)
 target_include_directories(vulkanscope PRIVATE ${IMGUI} ${IMGUI}/backends)

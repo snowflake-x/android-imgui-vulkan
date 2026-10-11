@@ -1,10 +1,13 @@
 # VulkanScope · Android ImGui Vulkan
 
-原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。Android 应用层使用 **Kotlin**，通过 JNI 连接 C++ Vulkan/ImGui 渲染层。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。界面使用英文，避免系统中文字体依赖。
+原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。Android 应用层使用 **Kotlin**，通过 JNI 连接 C++ Vulkan/ImGui 渲染层。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。ImGui 面板使用英文；HUD 配置和悬浮窗使用 Android 字体显示中文。
 
 ## 功能
 
-- 实时本应用 FPS、平均帧耗时、最近 180 帧耗时曲线。FIFO 垂直同步；不是其他游戏的全局 FPS 或悬浮窗。
+- `frame-metrics`：实时本应用 FPS、平均帧耗时、最近 180 帧耗时曲线，FIFO 垂直同步。
+- `performance-hud`：接入已有可逆 C++ 插件系统的前台应用监控，支持跨应用悬浮窗。用户启用 root 后，通过前台应用 SurfaceFlinger 的实际呈现时间戳统计 FPS、平均/P95 呈现间隔；系统不提供数据时显示 N/A，不用本应用帧率或刷新率代替。
+- HUD 支持 23 项指标的开关、排序和预设，采样间隔、字号、背景透明度、四角位置均可持久保存；可指定 Surface 和 CPU 功耗传感器。
+- 自动识别可读取的 Unity/Unreal 引擎进程及游戏版本。**第三方游戏的内部渲染分辨率需要经过验证的游戏/版本读取器；当前尚未提供王者荣耀、和平精英的读取器**，不会用屏幕尺寸冒充。详见[性能 HUD 使用说明](docs/performance-hud.md)和[引擎数据接入说明](docs/engine-resolution.md)。
 - 屏幕像素、渲染表面尺寸、密度、设备报告的 DPI、刷新率和旋转角度。
 - Android/设备型号、ABI、CPU 核数、可用/总内存。
 - Vulkan GPU 名称、API 版本、原始驱动版本、厂商/设备 ID、交换链信息。
@@ -35,7 +38,7 @@ export JAVA_HOME=/path/to/jdk-25
 export PATH="$JAVA_HOME/bin:$PATH"
 sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
 export ANDROID_HOME=/path/to/android-sdk
-./gradlew assembleDebug assembleRelease lintDebug
+./gradlew assembleDebug assembleRelease lintDebug testDebugUnitTest
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -46,6 +49,8 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 - `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、宿主面板与生命周期。
 - `app/src/main/cpp/plugin/`：可逆插件内核，管理依赖、类型事件、服务与作用域资源。
 - `app/src/main/cpp/features/`：帧率、设备信息、GPU 信息插件；界面 **Plugins** 可独立启停。
+- `features/performance_hud.*` 与 `HudService.kt`：插件控制面板、宿主管理的前台采集会话和可配置悬浮显示。
+- `ForegroundFpsCollector.kt`、`HardwareCollector.kt`、`EngineResolutionCollector.kt`：前台帧数据、硬件传感器及引擎识别；`HudSettingsActivity.kt` 提供配置和诊断。
 - [C++ 插件设计与接入](docs/cpp-plugins.md)：参考 DeepSeek harness / Cordis，说明回滚保证、扩展方式和宿主测试。
 - `app/src/main/java/dev/snowflake/vulkan/MainActivity.kt`：Kotlin NativeActivity、屏幕/设备信息与受限 root 查询；保留原生层调用的 JNI 方法名称和签名。
 - `.github/workflows/android.yml`：自动编译、Lint、APK 上传、标签发布。
