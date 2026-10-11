@@ -43,6 +43,38 @@ void identity() {
                         "com.game.app/.Main}\ntopResumedActivity=ActivityRecord{cd u11 com.other.app/.Play}",
                         true);
     require(f && f->user == 11 && f->package == "com.other.app", "foreground priority and Android user");
+    f = ParseForeground("    topResumedActivity=ActivityRecord{a u0 com.android.launcher/.Launcher}\n"
+                        "    mResumedActivity: ActivityRecord{b u0 com.android.launcher/.Launcher}\n"
+                        "  ResumedActivity: ActivityRecord{c u10 com.game.app/.Play}\n"
+                        "    topResumedActivity=ActivityRecord{d u0 com.other.app/.Play}\n", true);
+    require(f && f->user == 10 && f->package == "com.game.app",
+            "global focused activity overrides all per-task resumed records on recent Android");
+    require(!ParseForeground("mLastResumedActivity: ActivityRecord{a u0 com.old.app/.Main}\n"
+                             "last topResumedActivity=ActivityRecord{b u0 com.old.app/.Main}", true),
+            "historical and incidental activity markers cannot select a foreground app");
+    f = ParseForeground("  mFocusedApp=ActivityRecord{a u0 com.android.launcher/.Launcher}\n"
+                        "  mCurrentFocus=Window{b u10 com.game.app/com.game.app.Play}\n", false);
+    require(f && f->user == 10 && f->package == "com.game.app",
+            "window focus fallback retains Android user and prefers the current focused window");
+    f = ParseForeground("mFocusedApp=ActivityRecord{a u0 com.old.game/.Main}\n"
+                        "mCurrentFocus=Window{b u0 dev.snowflake.vulkan/.MainActivity}\n", false);
+    require(f && f->package == "dev.snowflake.vulkan",
+            "monitor window focus must not fall through to a previously focused game");
+    require(!ParseForeground("mFocusedApp=ActivityRecord{a u0 com.old.game/.Main}\n"
+                             "mCurrentFocus=null\n", false),
+            "explicit absent window focus cannot select a stale focused application");
+    const std::string task = "topResumedActivity=ActivityRecord{a u0 com.android.launcher/.Launcher}\n";
+    const std::string game = "topResumedActivity=ActivityRecord{b u10 com.game.app/.Play}\n";
+    require(!ParseForeground(task + game + task, true),
+            "conflicting task identities remain ambiguous even if a later record repeats the first");
+    require(!ParseForeground(game + "topResumedActivity=ActivityRecord{c u11 com.game.app/.Play}\n", true),
+            "resumed identities from different Android users are ambiguous");
+    f = ParseForeground(game + game, true);
+    require(f && f->user == 10 && f->package == "com.game.app",
+            "duplicate records for the same package and Android user are unambiguous");
+    require(!ParseForeground(task + "  ResumedActivity: null\n", true) &&
+                !ParseForeground("  ResumedActivity=null\n" + task, true),
+            "explicit absent global focus overrides task records in either dump order");
     auto names = Surfaces(
         "SurfaceView[com.game.app/.Main]\ncom.game.app.clone/Main\ndev.snowflake.vulkan.PerformanceHUD\n",
         "com.game.app", "");
@@ -179,7 +211,7 @@ void processMemory() {
     int user = 10;
     Collector collector(cancelled, [&](const std::string &script, int) {
         if (script == "id -u") return CommandResult{true, "0\n", ""};
-        if (script == "dumpsys activity activities")
+        if (script.find("dumpsys activity activities") != std::string::npos)
             return CommandResult{true, "topResumedActivity=ActivityRecord{cd u10 com.game.app/.Play}", ""};
         if (script == "pidof 'com.game.app'") return CommandResult{true, "123\n", ""};
         if (script == "cat /proc/123/status")
@@ -195,6 +227,78 @@ void processMemory() {
     user = 11;
     values = collector.sample(config);
     require(values.count("app_memory_mb") == 0, "reject process from another Android user");
+}
+void foregroundQueries() {
+    const auto path = "/tmp/vulkanscope-foreground-" + std::to_string(getpid());
+    {
+        std::ofstream dump(path);
+        dump << "ACTIVITY MANAGER ACTIVITIES\n";
+        for (int i = 0; i < 1000; ++i) {
+            dump << "      topResumedActivity=ActivityRecord{a u0 com.android.launcher/.Launcher}\n";
+            dump << std::string(100, 'x') << '\n';
+        }
+        dump << "  ResumedActivity: ActivityRecord{b u10 com.game.app/.Play}\n";
+        dump << "mLastResumedActivity: ActivityRecord{c u0 com.old.app/.Main}\n";
+    }
+    std::atomic<bool> cancelled{false};
+    int activityExit = 0, windowExit = 0, windowCalls = 0;
+    std::string window = "mCurrentFocus=Window{d u11 com.fallback.app/.Play}\n";
+    Collector collector(cancelled, [&](const std::string &script, int timeout) {
+        if (script == "id -u") return CommandResult{true, "0\n", ""};
+        const bool activity = script.find("dumpsys activity activities") != std::string::npos;
+        if (!activity && script.find("dumpsys window windows") == std::string::npos)
+            throw std::runtime_error("unexpected command during foreground query test");
+        if (!activity) ++windowCalls;
+        const auto produce = activity ? "cat " + Quote(path) : "printf '%s' " + Quote(window);
+        const auto fixture = "dumpsys() { " + produce + "; return " +
+                             std::to_string(activity ? activityExit : windowExit) + "; }; " + script;
+        auto result = RunCommand({"bash", "-c", fixture}, cancelled, timeout);
+        require(result.output.size() <= 24576, "focus extraction stays below process output capture bound");
+        return result;
+    });
+    Config config;
+    for (auto &item : config.enabled) item.second = false;
+    config.root = true;
+    auto values = collector.sample(config);
+    require(values["foreground"] == "com.game.app" && values["foreground_user"] == "10" && windowCalls == 0,
+            "execute bounded extraction and retain authoritative focus after a dump larger than 32 KiB");
+    activityExit = 7;
+    values = collector.sample(config);
+    require(values["foreground"] == "com.fallback.app" && values["foreground_user"] == "11" && windowCalls == 1,
+            "nonzero activity dump exit survives the filter pipeline and falls back to window focus");
+    require(values["activity_query"].find("Command denied or failed") != std::string::npos,
+            "successful window fallback retains the ActivityManager failure for diagnosis");
+    activityExit = 0;
+    std::ofstream(path) << "topResumedActivity=ActivityRecord{a u0 com.android.launcher/.Launcher}\n"
+                          "topResumedActivity=ActivityRecord{b u10 com.game.app/.Play}\n";
+    values = collector.sample(config);
+    require(values["foreground"] == "com.fallback.app" && windowCalls == 2,
+            "conflicting task focus without a global record falls back to the window query");
+    std::ofstream(path) << "topResumedActivity=ActivityRecord{a u0 com.android.launcher/.Launcher}\n"
+                          "ResumedActivity: null\n";
+    values = collector.sample(config);
+    require(values["foreground"] == "com.fallback.app" && windowCalls == 3,
+            "explicit null global focus falls back instead of selecting a stale launcher task");
+    window = "mFocusedApp=ActivityRecord{a u11 com.old.game/.Main}\n"
+             "mCurrentFocus=Window{b u0 dev.snowflake.vulkan/.MainActivity}\n";
+    values = collector.sample(config);
+    require(values.count("foreground_user") == 0 && values["foreground"] == "N/A (Monitor is in foreground)",
+            "window fallback observes the monitor in foreground without retaining an old game");
+    std::ofstream(path) << "Permission Denial: can't dump ActivityManager\n";
+    activityExit = 0;
+    windowExit = 4;
+    window = "Error: window service unavailable\n";
+    values = collector.sample(config);
+    require(values.count("foreground_user") == 0 &&
+                values["foreground"].find("Permission Denial") != std::string::npos &&
+                values["foreground"].find("window service unavailable") != std::string::npos,
+            "missing foreground distinguishes permission output and a failed window query");
+    require(values["app_memory"] == values["foreground"],
+            "missing foreground carries the same useful reason into process-memory diagnostics");
+    config.root = false;
+    values = collector.sample(config);
+    require(values["app_memory"] == "N/A (Root disabled)", "root-disabled memory is explained explicitly");
+    std::remove(path.c_str());
 }
 void authorization() {
     std::atomic<bool> cancelled{false};
@@ -272,6 +376,7 @@ int main() {
         lifecycle();
         authorization();
         processMemory();
+        foregroundQueries();
         systemSnapshots();
         std::cout << "Native monitor regression tests passed\n";
     } catch (const std::exception &e) {

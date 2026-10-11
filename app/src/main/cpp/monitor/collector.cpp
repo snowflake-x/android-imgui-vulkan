@@ -181,10 +181,31 @@ void Collector::hardware(const Config &c, Values &v) {
                           : "N/A (memory counters unavailable)";
     }
 }
+/** @brief 在 Android mksh 中先压缩焦点记录再有界保留尾部，全局焦点位于完整任务列表之后。 */
+static std::string ForegroundQuery(bool activities) {
+    const std::string command = activities ? "dumpsys activity activities" : "dumpsys window windows";
+    const std::string markers = activities ? "ResumedActivity|topResumedActivity|mResumedActivity"
+                                           : "mCurrentFocus|mFocusedApp";
+    return "set -o pipefail; " + command + " 2>&1 | sed -n -E " +
+           Quote("/^[[:space:]]*(" + markers + ")[[:space:]]*[:=]|[Pp]ermission [Dd]enial|"
+                 "[Pp]ermission denied|[Ee]rror|[Tt]imed out|[Tt]imeout|Can.t find service/p") +
+           " | tail -c 24576";
+}
+/** @brief 为缺失焦点保留有界命令诊断，区分调用失败和成功但没有当前活动记录。 */
+static std::string ForegroundQueryStatus(const CommandResult &result, bool found) {
+    if (result.success && found)
+        return "Current activity identified";
+    std::string status = result.success ? "No current activity record"
+                                       : (result.error.empty() ? "Command failed" : result.error);
+    if (!result.output.empty())
+        status += ": " + result.output.substr(0, 512);
+    return status;
+}
 void Collector::foreground(const Config &c, Values &v) {
     latestFrames_ = {};
     auto unavailable = [&](const std::string &why) {
-        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface", "graphics_api"})
+        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface", "graphics_api",
+                               "app_memory"})
             v[id] = "N/A (" + why + ")";
         frames_.reset();
     };
@@ -192,15 +213,24 @@ void Collector::foreground(const Config &c, Values &v) {
         unavailable(rootError_);
         return;
     }
-    auto activity = root("dumpsys activity activities");
+    auto activity = root(ForegroundQuery(true));
     auto foreground = activity.success ? ParseForeground(activity.output, true) : std::nullopt;
-    if (!foreground) {
-        auto window = root("dumpsys window windows");
+    v["activity_query"] = ForegroundQueryStatus(activity, foreground.has_value());
+    if (!foreground && !cancel_) {
+        auto window = root(ForegroundQuery(false));
         if (window.success)
             foreground = ParseForeground(window.output, false);
+        v["window_query"] = ForegroundQueryStatus(window, foreground.has_value());
     }
-    if (!foreground || foreground->package == "dev.snowflake.vulkan") {
-        unavailable("No foreground game");
+    if (!foreground) {
+        std::string why = "Foreground unavailable; activity: " + v["activity_query"];
+        if (v.count("window_query"))
+            why += "; window: " + v["window_query"];
+        unavailable(why);
+        return;
+    }
+    if (foreground->package == "dev.snowflake.vulkan") {
+        unavailable("Monitor is in foreground");
         return;
     }
     v["foreground"] = foreground->package;

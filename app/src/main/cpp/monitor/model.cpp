@@ -230,31 +230,53 @@ std::optional<Foreground> ParseForeground(const std::string &text, bool activiti
     int best = 0;
     std::optional<Foreground> result;
     while (std::getline(lines, line)) {
+        const auto start = line.find_first_not_of(" \t\r");
+        if (start == std::string::npos)
+            continue;
+        const auto delimiter = line.find_first_of(":=", start);
+        if (delimiter == std::string::npos)
+            continue;
+        auto marker = line.substr(start, delimiter - start);
+        marker.erase(marker.find_last_not_of(" \t\r") + 1);
         int priority = 0;
         if (activities) {
-            if (line.find("topResumedActivity") != std::string::npos)
+            /** @brief 全局 ResumedActivity 才是聚焦活动；每个任务都可能有 topResumedActivity。 */
+            if (marker == "ResumedActivity")
                 priority = 3;
-            else if (line.find("mResumedActivity") != std::string::npos)
+            else if (marker == "topResumedActivity")
                 priority = 2;
-            else if (line.find("ResumedActivity") != std::string::npos)
+            else if (marker == "mResumedActivity")
                 priority = 1;
         } else {
-            if (line.find("mCurrentFocus") != std::string::npos)
+            if (marker == "mCurrentFocus")
                 priority = 2;
-            else if (line.find("mFocusedApp") != std::string::npos)
+            else if (marker == "mFocusedApp")
                 priority = 1;
         }
-        std::smatch m;
-        if (priority <= best || !std::regex_search(line, m, component))
+        if (!priority || priority < best)
             continue;
-        if (!activities && m[2] == "dev.snowflake.vulkan")
+        auto content = line.substr(delimiter + 1);
+        content.erase(0, content.find_first_not_of(" \t\r"));
+        content.erase(content.find_last_not_of(" \t\r") + 1);
+        /** @brief 权威焦点为空或同等级身份冲突时，不用较低优先级的旧任务替代。 */
+        if (content == "null") {
+            best = priority;
+            result.reset();
+            continue;
+        }
+        std::smatch m;
+        if (!std::regex_search(content, m, component))
             continue;
         try {
             int user = std::stoi(m[1]);
             if (user > 21474)
                 continue;
-            result = Foreground{m[2], user};
-            best = priority;
+            if (priority > best) {
+                result = Foreground{m[2], user};
+                best = priority;
+            } else if (result && (result->package != m[2] || result->user != user)) {
+                result.reset();
+            }
         } catch (...) {
         }
     }
