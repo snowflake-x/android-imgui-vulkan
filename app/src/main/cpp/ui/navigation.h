@@ -1,6 +1,7 @@
 #pragma once
 #include "imgui.h"
 #include "ui/i18n.h"
+#include <array>
 #include <functional>
 namespace vulkanscope::ui {
 enum class Page { Home, Plugins };
@@ -11,7 +12,13 @@ struct Navigation {
     struct TouchScroll {
         ImGuiID window = 0, owner = 0;
         ImVec2 start{}, previous{};
-        bool pending = false, dragging = false;
+        ImVec2 displaySize{}, viewportSize{};
+        Page page = Page::Home;
+        bool pending = false, dragging = false, coasting = false, hasTarget = false;
+        float velocity = 0, position = 0, target = 0;
+        struct MotionSample { double time = 0; float y = 0; };
+        std::array<MotionSample, 32> samples{};
+        int sampleCount = 0;
     } touch;
 
 };

@@ -53,7 +53,7 @@ int main() {
     auto position = [&](ImVec2 p) { io.AddMousePosEvent(p.x, p.y); frame(); };
     auto down = [&](ImVec2 p) { position(p); io.AddMouseButtonEvent(0, true); frame(); };
     auto up = [&] { io.AddMouseButtonEvent(0, false); frame(); frame(); };
-    auto top = [&] { resetScroll = true; frame(); resetScroll = false; frame(); };
+    auto top = [&] { CancelPageTouch(navigation); resetScroll = true; frame(); resetScroll = false; frame(); };
     try {
         frame(); frame();
         io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);

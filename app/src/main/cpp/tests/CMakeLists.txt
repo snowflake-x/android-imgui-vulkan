@@ -72,6 +72,11 @@ add_executable(navigation_touch_test navigation_touch_test.cpp ../ui/navigation.
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
 target_include_directories(navigation_touch_test PRIVATE .. ../vendor/imgui)
 
+add_executable(navigation_inertia_test navigation_inertia_test.cpp ../ui/navigation.cpp ../ui/i18n.cpp ../ui/theme.cpp
+    ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
+    ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(navigation_inertia_test PRIVATE .. ../vendor/imgui)
+
 add_executable(surface_selection_test surface_selection_test.cpp ../monitor/model.cpp)
 target_include_directories(surface_selection_test PRIVATE ..)
 
@@ -82,7 +87,7 @@ target_include_directories(surface_collection_test PRIVATE ..)
 add_executable(diagnostic_history_test diagnostic_history_test.cpp ../monitor/diagnostics.cpp)
 target_include_directories(diagnostic_history_test PRIVATE ..)
 
-foreach(test_target navigation_touch_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test)
+foreach(test_target navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

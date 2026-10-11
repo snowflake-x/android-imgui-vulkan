@@ -82,7 +82,12 @@ static void check(VkResult result) {
     if (result < 0) throw std::runtime_error("Vulkan error: " + std::to_string(result));
 }
 static void cleanup() {
-    if (mainContext) ImGui::SetCurrentContext(mainContext);
+    if (mainContext) {
+        ImGui::SetCurrentContext(mainContext);
+        vulkanscope::ui::CancelPageTouch(navigation);
+    } else {
+        navigation.touch = {};
+    }
     if (device) vkDeviceWaitIdle(device);
     /** @brief 所有插件回调和资源须在其借用的图形宿主之前销毁。 */
     plugins.reset();
@@ -372,7 +377,10 @@ static void command(android_app*, int32_t cmd) {
         focused = false;
         if (ready) vulkanscope::ui::CancelPageTouch(navigation);
     }
-    if (cmd == APP_CMD_WINDOW_RESIZED || cmd == APP_CMD_CONTENT_RECT_CHANGED) rebuild = true;
+    if (cmd == APP_CMD_WINDOW_RESIZED || cmd == APP_CMD_CONTENT_RECT_CHANGED) {
+        if (ready) vulkanscope::ui::CancelPageTouch(navigation);
+        rebuild = true;
+    }
 }
 void android_main(android_app* state) {
     app = state;
