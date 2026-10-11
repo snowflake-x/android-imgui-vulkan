@@ -132,6 +132,12 @@ bool Manager::command(const std::string &key, const std::string &value) {
         } else if (key == "preset") {
             if (value == "game" || value == "hardware") monitor::ApplyMetricPreset(c, value == "game" ? monitor::MetricPreset::Game : monitor::MetricPreset::Hardware);
             else valid = false;
+        } else if (key == "resetPerformance" && value == "true") {
+            auto defaults = monitor::Config{};
+            defaults.language = c.language;
+            defaults.autoRoot = c.autoRoot;
+            defaults.managerPlugins = c.managerPlugins;
+            c = std::move(defaults);
         } else if (key == "reset" && value == "true") c = monitor::Config{};
         else if (key.rfind("metric:", 0) == 0) {
             const auto found = c.enabled.find(key.substr(7));

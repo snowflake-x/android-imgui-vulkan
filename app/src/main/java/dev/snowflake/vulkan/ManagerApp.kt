@@ -60,10 +60,12 @@ internal fun ManagerApp(
             val homeScroll = rememberLazyListState()
             val pluginScroll = rememberLazyListState()
             val settingsScroll = rememberLazyListState()
+            val performanceScroll = rememberLazyListState()
             val scrollBehavior = MiuixScrollBehavior()
             BackHandler(screen != "main") { screen = "main" }
             val title = when (screen) {
-                "settings" -> tr("Settings", "设置")
+                "settings" -> tr("Global settings", "全局设置")
+                "performance_settings" -> tr("Performance settings", "性能插件设置")
                 "diagnostics" -> tr("Diagnostics", "诊断")
                 else -> if (page == 0) "VulkanScope" else tr("Plugins", "插件列表")
             }
@@ -98,15 +100,21 @@ internal fun ManagerApp(
                     DiagnosticsPage(state, loadDiagnostic, modifier, contentPadding)
                 } else {
                     LazyColumn(modifier = modifier,
-                        state = if (screen == "settings") settingsScroll else if (page == 0) homeScroll else pluginScroll,
+                        state = when (screen) {
+                            "settings" -> settingsScroll
+                            "performance_settings" -> performanceScroll
+                            else -> if (page == 0) homeScroll else pluginScroll
+                        },
                         contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (state.loading) item { MessageCard(tr("Preparing native monitoring…", "正在初始化原生监控…")) }
                         state.error?.let { error -> item { MessageCard(error) } }
                         if (!state.loading) {
                             if (screen == "settings") {
-                                item { RootSettings(state, change) }
-                                item { DisplaySettings(state, change) }
                                 item { InterfaceSettings(state, change) }
+                                item { StartupRootSettings(state, change) }
+                            } else if (screen == "performance_settings") {
+                                item { PerformanceRootSettings(state, change) }
+                                item { DisplaySettings(state, change) }
                                 item { SectionTitle(tr("Fields and order", "字段与顺序")) }
                                 item {
                                     Card {
@@ -127,7 +135,7 @@ internal fun ManagerApp(
                                     }
                                 }
                                 item { AdvancedSettings(state, change) }
-                                item { TextButton(tr("Restore defaults", "恢复默认配置"), { change("reset", "true") }, Modifier.fillMaxWidth()) }
+                                item { TextButton(tr("Reset performance settings", "恢复性能插件默认配置"), { change("resetPerformance", "true") }, Modifier.fillMaxWidth()) }
                             } else if (page == 1) {
                                 item { Description(tr("Choose the information shown on your home page.", "选择主页中显示的功能，开关会自动保存。")) }
                                 items(state.data.array("plugins"), key = { it.getString("id") }) { plugin ->
@@ -136,18 +144,21 @@ internal fun ManagerApp(
                                             checked = plugin.getBoolean("enabled"),
                                             startAction = { Icon(pluginIcon(plugin.getString("id")), null, tint = MiuixTheme.colorScheme.primary) },
                                             onCheckedChange = { change("plugin:" + plugin.getString("id"), it.toString()) })
+                                        if (plugin.getString("id") == "performance-hud") {
+                                            TextButton(tr("Performance settings", "性能插件设置"),
+                                                { screen = "performance_settings" }, Modifier.fillMaxWidth().padding(12.dp))
+                                        }
                                     }
                                 }
                             } else {
                                 item { StatusCard(state, change) }
                                 if (state.pluginEnabled("performance-hud")) item {
-                                    HudCard(state, action, { screen = "settings" }, {
+                                    HudCard(state, action, { screen = "performance_settings" }, {
                                         screen = "diagnostics"; loadDiagnostic("", 0)
                                     })
                                 }
                                 if (state.pluginEnabled("device-info")) item { DeviceCard(state.data.optString("system")) }
                                 if (state.pluginEnabled("gpu-info")) item { GpuCard(state) }
-                                item { RootSettings(state, change) }
                                 item {
                                     Card {
                                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -276,11 +287,15 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
         }
     }
 }
-@Composable private fun RootSettings(state: ManagerState, change: (String, String) -> Unit) {
+@Composable private fun StartupRootSettings(state: ManagerState, change: (String, String) -> Unit) {
     Card {
         SuperSwitch(title = tr("Request root on startup", "启动时自动申请 Root"),
             summary = tr("Enable native sampling after authorization", "授权成功后自动启用原生采样"),
             checked = state.config.optBoolean("autoRoot", true), onCheckedChange = { change("autoRoot", it.toString()) })
+    }
+}
+@Composable private fun PerformanceRootSettings(state: ManagerState, change: (String, String) -> Unit) {
+    Card {
         SuperSwitch(title = tr("Root display layer", "Root 独立显示图层"),
             summary = tr("Use SurfaceFlinger when root is available. Turn off for standard overlay; restart HUD to apply.",
                 "有 Root 时直接创建 SurfaceFlinger 图层。关闭后使用普通悬浮窗，重启显示生效。"),
