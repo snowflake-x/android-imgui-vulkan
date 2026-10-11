@@ -20,6 +20,7 @@ const std::vector<Metric> &Metrics() {
                                               {"frame_p95", "P95 frame time", false},
                                               {"fps_source", "FPS source", true},
                                               {"surface", "Surface", false},
+                                              {"graphics_api", "Graphics API (root call tracing)", false},
                                               {"gpu_model", "GPU model", true},
                                               {"app_memory", "Process memory (RSS)", true},
                                               {"gpu_driver", "GPU driver", false},

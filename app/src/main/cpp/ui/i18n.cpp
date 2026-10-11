@@ -10,6 +10,8 @@ struct Entry {
 };
 constexpr Entry entries[] = {
     {"Foreground", "前台应用"},
+    {"Graphics API (root call tracing)", "图形 API（root 调用跟踪）"},
+    {"Graphics tracing samples calls for 200 ms. Requires root and kernel uprobes; adds tracing overhead.", "图形跟踪采样 200 毫秒的实际调用，需要 root 和内核 uprobes 支持，会增加跟踪开销。"},
     {"Foreground FPS", "前台帧率"},
     {"P95 frame time", "P95 帧时间"},
     {"System RAM", "系统内存"},

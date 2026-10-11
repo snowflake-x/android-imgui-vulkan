@@ -150,6 +150,7 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
         ImGui::TextWrapped("%s", Text(language, "Battery power is a whole-device estimate, never a CPU power substitute. Leave the Surface override empty for automatic selection."));
         ImGui::TreePop();
     }
+    ImGui::TextWrapped("%s", Text(language, "Graphics tracing samples calls for 200 ms. Requires root and kernel uprobes; adds tracing overhead."));
     if (ImGui::Button(Label(language, "Game fields").c_str())) {
         for (auto &item : config.enabled)
             item.second = false;

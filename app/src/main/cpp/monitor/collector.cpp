@@ -1,4 +1,5 @@
 #include "monitor/collector.h"
+#include "monitor/graphics_trace.h"
 #include <algorithm>
 #include <cmath>
 #include <dirent.h>
@@ -183,7 +184,7 @@ void Collector::hardware(const Config &c, Values &v) {
 void Collector::foreground(const Config &c, Values &v) {
     latestFrames_ = {};
     auto unavailable = [&](const std::string &why) {
-        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface"})
+        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface", "graphics_api"})
             v[id] = "N/A (" + why + ")";
         frames_.reset();
     };
@@ -204,6 +205,12 @@ void Collector::foreground(const Config &c, Values &v) {
     }
     v["foreground"] = foreground->package;
     v["foreground_user"] = std::to_string(foreground->user);
+    if (c.has("graphics_api") && !cancel_) {
+        v["graphics_api"] = traceCleanupFailed_
+            ? "N/A (trace cleanup failed; restart device before retrying)"
+            : TraceGraphics(foreground->package, foreground->user, cancel_, runner_);
+        traceCleanupFailed_ = v["graphics_api"].find("trace cleanup failed") != std::string::npos;
+    }
     if (c.has("app_memory")) {
         v["app_memory"] = "N/A (process RSS unavailable)";
         auto pids = root("pidof " + Quote(foreground->package));

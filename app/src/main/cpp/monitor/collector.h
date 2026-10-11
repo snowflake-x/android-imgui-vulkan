@@ -25,6 +25,7 @@ class Collector {
     CommandRunner runner_;
     bool opted_ = false, authorized_ = false;
     std::string rootError_;
+    bool traceCleanupFailed_ = false;
     FrameStats frames_;
     FrameSample latestFrames_;
     std::optional<Ticks> ticks_;

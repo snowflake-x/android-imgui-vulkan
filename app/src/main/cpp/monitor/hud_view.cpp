@@ -57,7 +57,11 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     if (hz.empty())
         hz = "-- Hz";
     hz.erase(std::remove(hz.begin(), hz.end(), ' '), hz.end());
-    text(left, y, "SurfaceFlinger", white);
+    auto api = config.has("graphics_api") ? value(s, "graphics_api") : std::string{};
+    if (api.empty()) api = "SurfaceFlinger";
+    else if (api.rfind("N/A", 0) == 0) api = "API: --";
+    else api = api.substr(0, api.find(" ("));
+    text(left, y, fit(api, right - width(hz) - left - f), white);
     text(right - width(hz), y, hz, white);
     y += line;
     /** @brief 固定单元格右对齐，与数值长度无关；仅异常的边界值变红。 */
