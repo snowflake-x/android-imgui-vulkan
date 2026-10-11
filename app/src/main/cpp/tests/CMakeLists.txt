@@ -84,10 +84,26 @@ add_executable(surface_collection_test surface_collection_test.cpp ../monitor/co
     ../monitor/graphics_trace.cpp ../monitor/model.cpp ../monitor/process.cpp)
 target_include_directories(surface_collection_test PRIVATE ..)
 
+add_executable(gpu_memory_test gpu_memory_test.cpp ../monitor/gpu_memory.cpp
+    ../monitor/model.cpp ../monitor/process.cpp)
+target_include_directories(gpu_memory_test PRIVATE ..)
+
+add_executable(gpu_timing_test gpu_timing_test.cpp ../monitor/gpu_timing.cpp ../monitor/gpu_memory.cpp
+    ../monitor/model.cpp ../monitor/process.cpp)
+target_include_directories(gpu_timing_test PRIVATE ..)
+
+add_executable(gpu_collection_test gpu_collection_test.cpp ../monitor/collector.cpp
+    ../monitor/graphics_trace.cpp ../monitor/model.cpp ../monitor/process.cpp)
+target_include_directories(gpu_collection_test PRIVATE ..)
+
+foreach(collector_target native_monitor_test native_settings_test navigation_i18n_test surface_collection_test gpu_collection_test)
+    target_sources(${collector_target} PRIVATE ../monitor/gpu_memory.cpp ../monitor/gpu_timing.cpp)
+endforeach()
+
 add_executable(diagnostic_history_test diagnostic_history_test.cpp ../monitor/diagnostics.cpp)
 target_include_directories(diagnostic_history_test PRIVATE ..)
 
-foreach(test_target navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test)
+foreach(test_target navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

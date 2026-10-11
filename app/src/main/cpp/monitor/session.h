@@ -52,6 +52,8 @@ class Session {
     std::function<PlatformSample()> platform_;
     std::atomic<bool> cancel_{true}, rootCancel_{false};
     bool initialized_ = false, interactive_ = true, failed_ = false;
+    /** @brief 仅采样线程访问；后续线程在旧线程 join 后继承，HUD 启停不清除此状态。 */
+    bool gpuTimingBlocked_ = false;
     std::atomic<bool> rootBusy_{false}, systemCancel_{true};
     std::thread systemWorker_;
     std::thread worker_, rootWorker_;

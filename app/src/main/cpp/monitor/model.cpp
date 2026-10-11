@@ -22,7 +22,9 @@ const std::vector<Metric> &Metrics() {
                                               {"surface", "Surface", false},
                                               {"graphics_api", "Graphics API (root call tracing)", false},
                                               {"gpu_model", "GPU model", true},
+                                              {"gpu_time", "GPU execution time (root tracing)", false},
                                               {"app_memory", "Process memory (RSS)", true},
+                                              {"gpu_memory", "GPU shared memory (KGSL)", true},
                                               {"gpu_driver", "GPU driver", false},
                                               {"gpu_api", "GPU API", false},
                                               {"cpu_freq", "CPU clock", true},
@@ -54,7 +56,7 @@ bool Config::has(const std::string &id) const {
 void ApplyMetricPreset(Config &config, MetricPreset preset) {
     for (auto &item : config.enabled)
         item.second = false;
-    for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory"})
+    for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory", "gpu_memory"})
         config.enabled[id] = true;
     if (preset == MetricPreset::Game) {
         for (const char *id : {"foreground", "frame_p95", "fps_source", "engine_resolution",

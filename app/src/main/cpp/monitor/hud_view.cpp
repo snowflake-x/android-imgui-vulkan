@@ -84,11 +84,11 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     };
     row("FPS:", config.has("fps") ? s.fps : HudRange{}, white, true, config.has("fps"));
     row("Pre:", config.has("frame_time") ? s.present : HudRange{}, blue, false, config.has("frame_time"));
-    row("GPU:", s.gpu, green, false, true);
+    row("GPU:", config.has("gpu_time") ? s.gpu : HudRange{}, green, false, config.has("gpu_time"));
     text(left, y, "Mem:", white);
     const auto memory = config.has("app_memory") ? number(s.processMb) + "MB" : "OFF";
     text(left + 8.8f * f - width(memory), y, memory, white);
-    const auto gpuMemory = "[" + number(s.gpuMb) + "MB]";
+    const auto gpuMemory = config.has("gpu_memory") ? "[" + number(s.gpuMb) + "MB]" : "[OFF]";
     text(right - width(gpuMemory), y, gpuMemory, green);
     y += line + .24f * f;
     if (config.hudGraph) {
@@ -101,8 +101,8 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
         }
         draw.AddLine(ImVec2(left, bottom), ImVec2(right, bottom), white, thickness);
         double ceiling = 40;
-        for (const auto *graph : {&s.presentGraph, &s.gpuGraph})
-            for (const auto &n : *graph)
+        if (config.has("frame_time"))
+            for (const auto &n : s.presentGraph)
                 if (n && std::isfinite(*n))
                     ceiling = std::max(ceiling, *n * 1.2);
         auto plot = [&](const std::vector<std::optional<double>> &graph, ImU32 color) {
@@ -123,7 +123,6 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
         };
         if (config.has("frame_time"))
             plot(s.presentGraph, blue);
-        plot(s.gpuGraph, green);
         y = bottom + .18f * f;
     }
     for (const auto &caption : HudCaptions(config, s)) {
@@ -133,7 +132,7 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     if (config.hudExtras) {
         for (const auto &id : config.order) {
             if (!config.has(id) || id == "fps" || id == "frame_time" || id == "gpu_model" ||
-                id == "app_memory")
+                id == "app_memory" || id == "gpu_time" || id == "gpu_memory")
                 continue;
             const auto metric =
                 std::find_if(Metrics().begin(), Metrics().end(), [&](const auto &m) { return id == m.id; });

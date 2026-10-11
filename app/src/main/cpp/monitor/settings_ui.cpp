@@ -67,8 +67,13 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     ImGui::Dummy(ImVec2(size.width, size.height));
     changed |= ui::Toggle(Label(language, "Frame history graph").c_str(), &config.hudGraph);
     changed |= ui::Toggle(Label(language, "Additional sensor rows").c_str(), &config.hudExtras);
-    changed |= ui::Toggle(Label(language, "Enable read-only root sampling").c_str(), &config.root);
-    ImGui::TextWrapped("%s", Text(language, "Root is optional. FPS and engine inspection need an existing su provider. Enabling this option authorizes read-only queries while the HUD runs. To retry a denied authorization, disable it for one sample, then re-enable it."));
+    changed |= ui::Toggle(Label(language, "Enable root sampling").c_str(), &config.root);
+    ImGui::TextWrapped("%s", Text(language, "Root is optional. FPS, GPU metrics and engine inspection need an existing su provider. Enabling this option authorizes telemetry and any separately enabled tracing while the HUD runs. To retry a denied authorization, disable it for one sample, then re-enable it."));
+    changed |= ui::Toggle(Label(language, "GPU execution time (root tracing)").c_str(), &config.enabled["gpu_time"]);
+    changed |= ui::Toggle(Label(language, "GPU shared memory (KGSL)").c_str(), &config.enabled["gpu_memory"]);
+    ImGui::TextWrapped("%s", Text(language, "GPU timing stays off by default and in field presets. Requires supported tracing events; each capture adds about 0.2-1.1 s of sampling time and tracing overhead. SELinux policy is unchanged."));
+    ImGui::TextWrapped("%s", Text(language, "GPU time uses ms/batch for hardware execution or ms/window for driver-reported active time. The window fallback includes all processes and apps sharing the application UID. Min/max describe the current capture; the graph shows presentation frame time."));
+    ImGui::TextWrapped("%s", Text(language, "GPU shared memory shows main-process KGSL allocations plus proportionally attributed DMA-BUF memory in decimal MB; these allocations use shared system RAM."));
     const char *intervals[] = {"500 ms", "1000 ms", "2000 ms"};
     int interval = config.interval == 500 ? 0 : config.interval == 2000 ? 2 : 1;
     if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Sample interval").c_str(), &interval, intervals, 3)) {

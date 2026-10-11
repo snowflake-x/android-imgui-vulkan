@@ -170,7 +170,7 @@ void Session::requestRoot() {
     });
 }
 void Session::collect() {
-    Collector collector(cancel_);
+    Collector collector(cancel_, {}, gpuTimingBlocked_);
     HudHistory history;
     while (!cancel_) {
         const auto c = config();
@@ -191,6 +191,7 @@ void Session::collect() {
                 setError("Screen off; sampling paused");
             } else {
                 auto values = collector.sample(c);
+                gpuTimingBlocked_ = collector.gpuTimingBlocked();
                 if (cancel_)
                     break;
                 for (auto &item : platform.values)
@@ -215,6 +216,7 @@ void Session::collect() {
                 diagnosticHistory_.record(values, diagnostics_);
             }
         } catch (const std::exception &e) {
+            gpuTimingBlocked_ = collector.gpuTimingBlocked();
             history.reset();
             collector.reset();
             setError(std::string("Native sampling error: ") + e.what());

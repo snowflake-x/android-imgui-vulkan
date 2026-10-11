@@ -12,6 +12,7 @@ struct HudSnapshot {
     Values values;
     HudRange fps, present, gpu;
     std::optional<double> processMb, gpuMb;
+    std::string gpuUnit;
     std::vector<std::optional<double>> presentGraph, gpuGraph;
     std::string status = "Start HUD to capture a foreground application";
     std::int64_t capturedNs = 0;

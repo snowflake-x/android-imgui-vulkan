@@ -1,5 +1,7 @@
 #include "monitor/collector.h"
 #include "monitor/graphics_trace.h"
+#include "monitor/gpu_memory.h"
+#include "monitor/gpu_timing.h"
 #include <algorithm>
 #include <cmath>
 #include <dirent.h>
@@ -209,7 +211,7 @@ void Collector::foreground(const Config &c, Values &v) {
     latestFrames_ = {};
     auto unavailable = [&](const std::string &why) {
         for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface", "graphics_api",
-                               "app_memory"})
+                               "app_memory", "gpu_time", "gpu_memory"})
             v[id] = "N/A (" + why + ")";
         frames_.reset();
         surfaceIdentity_.clear();
@@ -276,12 +278,41 @@ void Collector::foreground(const Config &c, Values &v) {
             }
         }
     }
+    if (!cancel_)
+        gpuTelemetry(c, *foreground, v);
     if (!c.has("fps") && !c.has("frame_time") && !c.has("frame_p95") && !c.has("fps_source") &&
         !c.has("surface")) {
         frames_.reset();
         return;
     }
     presentation(c, *foreground, v);
+}
+/** @brief GPU 统计与 SurfaceFlinger 独立，读取前后验证同一前台主进程的身份。 */
+void Collector::gpuTelemetry(const Config &c, const Foreground &foreground, Values &v) {
+    if (!c.has("gpu_time") && !c.has("gpu_memory"))
+        return;
+    std::string error;
+    const auto process = FindGpuProcess(foreground.package, foreground.user, cancel_, error, runner_);
+    if (!process) {
+        for (const auto *id : {"gpu_time", "gpu_memory"})
+            if (c.has(id))
+                v[id] = "N/A (" + error + ")";
+        return;
+    }
+    v["gpu_identity"] = process->identity();
+    if (c.has("gpu_memory") && !cancel_) {
+        auto memory = ReadGpuMemory(*process, cancel_, runner_);
+        v.insert(memory.begin(), memory.end());
+    }
+    if (c.has("gpu_time") && !cancel_) {
+        if (gpuTimingCleanupFailed_) {
+            v["gpu_time"] = "N/A (GPU trace cleanup failed; restart device before retrying)";
+        } else {
+            auto timing = ReadGpuTiming(*process, cancel_, runner_);
+            gpuTimingCleanupFailed_ = timing.cleanupFailed;
+            v.insert(timing.values.begin(), timing.values.end());
+        }
+    }
 }
 void Collector::presentation(const Config &c, const Foreground &foreground, Values &v) {
     const auto identity = std::to_string(foreground.user) + ":" + foreground.package + ":" + c.surface;

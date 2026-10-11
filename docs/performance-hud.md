@@ -8,7 +8,7 @@ Android 仅保留 `MainActivity.java`、`HudService.java` 两个生命周期桥�
 
 1. 在 **Foreground performance HUD → Configure** 展开 ImGui 配置页，点击 **Grant overlay permission** 到系统页面授权。Android 13+ 可点 **Allow HUD notification** 授权通知。
 2. 选择字段、顺序、字号、背景透明度、四角位置和采样间隔。设置立即保存；可使用 Game/Hardware 字段预设。
-3. 如需前台 FPS 或引擎信息，显式勾选 **Enable read-only root sampling**。默认关闭；需要设备已安装的 `su` 提供者。
+3. 如需前台 FPS、GPU 指标或引擎信息，显式启用 root 采样。默认关闭；需要设备已安装的 `su` 提供者。GPU 内存字段默认开启，GPU 耗时需要另外在字段设置中启用；耗时采集会短暂启用独立的内核跟踪实例。
 4. 点击 **Start HUD** 后切换游戏。首次有效采样只建立基线，下一次开始统计。拒绝授权后不会循环弹窗，停止再启动可重试。
 5. 点击通知的 **Stop**、主面板的 **Stop HUD**，或关闭性能插件以停止。关闭主界面不会结束用户启动的悬浮窗会话。
 
@@ -29,6 +29,8 @@ Android 仅保留 `MainActivity.java`、`HudService.java` 两个生命周期桥�
 | CPU 时钟、使用率 | cpufreq policy/核心节点、`/proc/stat` 差分；排除重复包含的 guest 计数 |
 | CPU 功耗 | 用户确认单位的 `/sys/` CPU 功率传感器；原始值乘以 W 系数 |
 | GPU 时钟、使用率 | Adreno/devfreq 已知 Hz 节点和 Adreno busy/total |
+| GPU 耗时 | KGSL 硬件命令批次活跃时长，或标准 `gpu_work_period` 的 UID 活跃时间窗口；分别注明 `ms/batch`、`ms/window`，不冒充逐帧耗时 |
+| GPU 内存 | 前台主进程 KGSL 记账的自分配与导入缓冲字节数；共享系统内存，非独立显存容量，详见下节 |
 | 内存 | `/proc/meminfo` 的 MemTotal、MemAvailable；整机已用/总内存 |
 | 电池功率、温度 | C++ 调用 Android 电池 API；电流×电压是整机电池功率估计，不是 CPU 功耗 |
 | 温控 | C++ 调用 Android 10+ 温控压力 API，不是 CPU 核心温度 |
@@ -66,7 +68,7 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 - 头部显示真实 Vulkan GPU 型号、显示模式分辨率和刷新率；第二行标注 SurfaceFlinger 来源，不伪造 Apple 型号、Direct 合成模式或缩放倍率。显示模式尺寸不等于游戏内部渲染尺寸。
 - Pre 为实际呈现间隔（ms），当前值取最近最多 120 个新间隔均值，FPS 为该均值的倒数。方括号为保留的最多 1200 个历史间隔的极值，曲线展示最近 200 个间隔。重复轮询不添加点；环形缓冲缺口断开曲线，切换应用/用户/Surface、休眠或失效时重置历史。没有新呈现时 FPS 显示 0，Pre 当前值显示 `--`。
 - FPS 下界低于当前值 80%，或 Pre 上界高于当前值 120% 时标红。这是本实现的显示阈值，并非声称复现 Apple 内部算法。
-- Mem 为前台主进程 `/proc/<pid>/status` 的 VmRSS（十进制 MB）；读取由 C++ 发起，需 root，并验证 Android 用户。它不是 PSS、整机内存或 Metal 资源分配大小。GPU 耗时与 GPU 内存尚无可信跨应用来源，显示 `--`，不会使用 GPU 使用率替代毫秒，也不会绘制假零值曲线。
+- Mem 左侧为前台主进程 `/proc/<pid>/status` 的 VmRSS（十进制 MB），右侧绿色方括号为 KGSL GPU 内存（同为十进制 MB）；两者可能重叠，不能相加。GPU 行显示本次采样得到的活跃耗时均值及最小/最大值，底部注明批次或工作窗口单位。GPU 数据独立于 SurfaceFlinger，FPS 缺失不妨碍读取。没有可信数据时显示 `--`，禁用字段显示 `OFF`；不使用 GPU 使用率替代毫秒，不将批次/工作窗口与 Pre 帧曲线混画。
 - **Frame history graph** 控制曲线，**Additional sensor rows** 显示附加指标；核心行保持固定位置，禁用值显示 `OFF`，已启用但尚无有效样本的值显示 `--`。其他字段的显示顺序继续由配置控制。主面板的 **Sample details** 保留完整文本采样报告，其轮询区间 FPS 与 HUD 的滚动均值 FPS 口径不同。
 - HUD 底部独立显示采集目标包名、采样状态以及 GPU 耗时/显存能力。完整诊断同时列出已启用字段，避免把配置关闭误判为采集失败。Game/Hardware 预设均保留 GPU 型号、FPS、Pre 和主进程 Mem；旧配置保留原选择，更新后重新选择预设即可应用修复。
 - 配置格式升级为版本 2，兼容读取版本 1，并保留旧字段选择。Android 窗口仍遵守 0.8 的触摸穿透透明度限制，背景滑块在此基础上调整。
@@ -74,6 +76,22 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 主机 `classic_hud_test` 检查滚动统计、历史隔离、缺口与尺寸约束，并可接收一个 PPM 输出路径，从实际 ImGui 三角形和随包字体生成预览；预览中的数值为测试样本，不会进入生产采集路径。
 
 主程序现采用底部双页导航，并提供中英文配置与自动系统字体；见[原生界面说明](native-ui.md)。最新配置版本为 3，增加语言偏好并兼容此前的版本 1、2。
+
+## GPU 耗时与共享内存
+
+采集器 `monitor/gpu_memory.*`、`monitor/gpu_timing.*` 复用已有 C++ 后台工作线程。先确定前台包的 Android 用户、主进程 PID、UID 与启动时间，读取前后核验身份；进程退出、PID 复用或查询失败时不沿用旧数据。该功能无需向游戏注入代码。
+
+**内存：** 优先读取 `/sys/class/kgsl/kgsl/proc/<PID>/`，兼容部分驱动的 `/sys/class/kgsl/kgsl-3d0/proc/<PID>/`。`kernel` 是当前 KGSL 自分配字节数，`imported_mem` 是驱动按 EGL 引用比例分摊的 DMA-BUF 导入字节数；两者相加得到此采集口径下的 GPU 共享内存记账量。`gpumem_mapped` 是 `kernel` 中已映射到 CPU 的子集，不能再次相加；`kernel_max`、`user_max` 是历史峰值，不能当当前值。具体来源、组成与读取失败原因保留在诊断中。它不等于独立 VRAM、物理驻留量或整个多进程应用的总量，也不能与 RSS/PSS 相加。
+
+没有完整的 sysfs 计数时，可回退到可读的 `/sys/kernel/debug/kgsl/proc/<PID>/mem`（或 `/d/kgsl/proc/<PID>/mem`）。解析完整、有界且格式受支持的分配表，按同样口径累计 `gpumem` 与比例分摊的 `ion`，排除纯虚拟地址预留。此口径不包含通过 USERMEM_ADDR 导入的 CPU `usermem`，不另外累计 CPU 映射。只取得 `kernel` 时说明“仅分配量”，不把缺失导入量当作零。`gpu_memory_queries` 保留至多 4096 字符的查询诊断。
+
+**耗时：** 默认关闭，以免仅更新应用就增加跟踪开销。启用后优先尝试 `kgsl/adreno_cmdbatch_retired`：仅在 KGSL context 到目标 PID 的归属可验证时采集 200 ms，使用硬件报告的 `active` AO ticks 按 19.2 MHz 换算为毫秒，显示 `ms/batch`。`start` 到 `retire` 的跨度可能包含抢占等待，不用于替代 `active`；事件所属的内核工作线程 PID 也不用于判断游戏归属。
+
+无可用 context 映射时尝试标准 `power/gpu_work_period`，按真实 UID 过滤并采集约 1.1 秒，读取 `total_active_duration_ns`。该事件由一加 13 的 KGSL 驱动约每 900 ms 输出，显示 `ms/window` 并记录实际窗口长度；统计包含同 UID 的进程，共享 UID 的包无法单独区分。两种口径都不是游戏的逐帧 GPU 渲染耗时，不能用它们直接计算 FPS。没有事件不等于零耗时。
+
+跟踪只操作本次创建的独立 tracefs 实例，不清空系统全局 trace、不挂载 debugfs、不改变 SELinux。进程更替、取消、超时、格式不支持、输出截断或 trace 丢失时丢弃本轮数值；退出 trap 和额外有界清理负责移除实例。清理失败会停止当前应用会话后续 GPU 耗时跟踪并报告原因；停止再启动 HUD 也不会解除禁用。总采样周期还包含 200 ms 或约 1.1 秒的捕获时间及命令耗时。内核未导出事件或权限阻止访问时显示 N/A，root 授权本身不能保证所有驱动支持。
+
+单位与路径依据一加官方 [SM8750 Android 16 KGSL 驱动](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/tree/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel)：[`kgsl_sharedmem.c` 的进程内存属性](https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8750/blob/d50b305f7da9e14715a25120a4ac7b1a4b8b97c3/vendor/qcom/opensource/graphics-kernel/kgsl_sharedmem.c#L223)、`kgsl.c` 的 work-period 计时与 AO 换算、`kgsl_power_trace.h` 的纳秒字段、`adreno_trace.h` 的批次事件，以及 `adreno_debugfs.c` 的 context 进程归属。设备上的事件和文件仍须实际探测；开源驱动与双 ABI 构建验证不能替代对应固件的真机验收。
 
 ## 前台图形 API 调用跟踪
 

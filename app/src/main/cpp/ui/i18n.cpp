@@ -72,12 +72,18 @@ constexpr Entry entries[] = {
     {"Classic Metal HUD", "经典 Metal HUD"},
     {"Frame history graph", "帧历史曲线"},
     {"Additional sensor rows", "附加传感器行"},
-    {"Enable read-only root sampling", "启用只读 Root 采样"},
-    {"Root is optional. FPS and engine inspection need an existing su provider. Enabling this option "
-     "authorizes read-only queries while the HUD runs. To retry a denied authorization, disable it for one "
+    {"Enable root sampling", "启用 Root 采样"},
+    {"Root is optional. FPS, GPU metrics and engine inspection need an existing su provider. Enabling this option "
+     "authorizes telemetry and any separately enabled tracing while the HUD runs. To retry a denied authorization, disable it for one "
      "sample, then re-enable it.",
-     "Root 为可选项。FPS 与引擎检测需要设备提供 "
-     "su。开启后允许悬浮窗运行时执行只读查询。授权被拒绝后，请关闭至少一个采样周期，再重新开启以重试。"},
+     "Root 为可选项。FPS、GPU 指标与引擎检测需要设备提供 "
+     "su。开启后允许悬浮窗运行时采集数据，并执行单独开启的跟踪功能。授权被拒绝后，请关闭至少一个采样周期，再重新开启以重试。"},
+    {"GPU timing stays off by default and in field presets. Requires supported tracing events; each capture adds about 0.2-1.1 s of sampling time and tracing overhead. SELinux policy is unchanged.",
+     "GPU 耗时默认关闭，字段预设也不会开启。需要内核支持对应跟踪事件；每次跟踪增加约 0.2–1.1 秒采样时间及跟踪开销，不修改 SELinux 策略。"},
+    {"GPU time uses ms/batch for hardware execution or ms/window for driver-reported active time. The window fallback includes all processes and apps sharing the application UID. Min/max describe the current capture; the graph shows presentation frame time.",
+     "GPU 耗时以 ms/batch 表示命令批次的硬件执行时间，或以 ms/window 表示驱动统计窗口的活跃时间。窗口采样包含该应用 UID 下的全部进程及共享同一 UID 的应用。最小/最大值来自本轮采样；曲线显示逐帧呈现间隔。"},
+    {"GPU shared memory shows main-process KGSL allocations plus proportionally attributed DMA-BUF memory in decimal MB; these allocations use shared system RAM.",
+     "GPU 共享显存统计主进程的 KGSL 分配及按比例分摊的 DMA-BUF 内存，以十进制 MB 显示；这些分配使用与系统共用的内存。"},
     {"Sample interval", "采样间隔"},
     {"Text size", "字号"},
     {"Background opacity", "背景不透明度"},
@@ -133,7 +139,9 @@ constexpr Entry entries[] = {
     {"FPS source", "FPS 来源"},
     {"Surface", "Surface"},
     {"GPU model", "GPU 型号"},
+    {"GPU execution time (root tracing)", "GPU 执行耗时（root 跟踪）"},
     {"Process memory (RSS)", "进程内存（RSS）"},
+    {"GPU shared memory (KGSL)", "GPU 共享显存（KGSL）"},
     {"GPU driver", "GPU 驱动"},
     {"GPU API", "GPU API"},
     {"CPU clock", "CPU 时钟"},
