@@ -1,0 +1,19 @@
+name: Test C++ plugins
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure host tests
+        run: cmake -S app/src/main/cpp/tests -B build/plugin-tests -DCMAKE_BUILD_TYPE=Debug -DVULKANSCOPE_ENABLE_SANITIZERS=ON
+      - name: Build host tests
+        run: cmake --build build/plugin-tests --parallel 2
+      - name: Check lifecycle and headless panels
+        run: ctest --test-dir build/plugin-tests --output-on-failure

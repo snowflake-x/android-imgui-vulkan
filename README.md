@@ -39,7 +39,10 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 
 ## 代码结构
 
-- `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、ImGui 面板与生命周期。
+- `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、宿主面板与生命周期。
+- `app/src/main/cpp/plugin/`：可逆插件内核，管理依赖、类型事件、服务与作用域资源。
+- `app/src/main/cpp/features/`：帧率、设备信息、GPU 信息插件；界面 **Plugins** 可独立启停。
+- [C++ 插件设计与接入](docs/cpp-plugins.md)：参考 DeepSeek harness / Cordis，说明回滚保证、扩展方式和宿主测试。
 - `app/src/main/java/dev/snowflake/vulkan/MainActivity.java`：屏幕/设备信息与受限 root 查询。
 - `.github/workflows/android.yml`：自动编译、Lint、APK 上传、标签发布。
 - `app/src/main/cpp/vendor/imgui`：固定 Dear ImGui **v1.91.9b**，上游提交 `f5befd2d29e66809cd1110a152e375a7f1981f06`，附 MIT 许可证，构建时无需拉子模块。

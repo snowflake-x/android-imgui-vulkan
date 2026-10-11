@@ -3,14 +3,15 @@
 #include <vulkan/vulkan.h>
 #include <jni.h>
 #include <algorithm>
-#include <array>
-#include <chrono>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 #include "imgui.h"
 #include "imgui_impl_android.h"
 #include "imgui_impl_vulkan.h"
+#include "features/builtin_plugins.h"
 
 static android_app* app;
 static JNIEnv* env;
@@ -22,10 +23,20 @@ static uint32_t family;
 static ImGui_ImplVulkanH_Window window;
 static VkPhysicalDeviceProperties properties{};
 static bool ready = false, focused = false, rebuild = false, backend = false;
-static std::array<float, 180> history{};
-static int historyIndex = 0;
-static std::string systemReport, rootReport;
-static double nextRefresh = 0;
+static std::unique_ptr<vulkanscope::plugin::Runtime> plugins;
+/** @brief 功能开关属于宿主配置，Surface 重建时保留用户选择。 */
+static struct FeatureSetting {
+    const char* id;
+    const char* label;
+    bool enabled;
+} featureSettings[] = {
+    {"frame-metrics", "Frame metrics", true},
+    {"device-info", "Screen & device", true},
+    {"gpu-info", "Vulkan GPU", true}
+};
+static std::vector<std::pair<std::string, bool>> pluginChanges;
+static std::string pluginError, rootReport;
+static double nextRootRefresh = 0;
 
 static void check(VkResult result) {
     if (result < 0) throw std::runtime_error("Vulkan error: " + std::to_string(result));
@@ -57,6 +68,12 @@ static void javaCall(const char* name, const char* message = nullptr) {
 }
 static void cleanup() {
     if (device) vkDeviceWaitIdle(device);
+    /** @brief 所有插件回调和资源须在其借用的图形宿主之前销毁。 */
+    plugins.reset();
+    pluginChanges.clear();
+    pluginError.clear();
+    rootReport.clear();
+    nextRootRefresh = 0;
     if (backend) { ImGui_ImplVulkan_Shutdown(); backend = false; }
     if (ImGui::GetCurrentContext()) { ImGui_ImplAndroid_Shutdown(); ImGui::DestroyContext(); }
     if (device) {
@@ -135,40 +152,68 @@ static void initialize() {
     init.RenderPass = window.RenderPass; init.MinImageCount = 2; init.ImageCount = window.ImageCount;
     init.MSAASamples = VK_SAMPLE_COUNT_1_BIT; init.CheckVkResultFn = check;
     if (!ImGui_ImplVulkan_Init(&init)) throw std::runtime_error("ImGui Vulkan initialization failed");
-    backend = true; ready = true;
-    history.fill(0); historyIndex = 0; nextRefresh = 0;
+    backend = true;
+    plugins = std::make_unique<vulkanscope::plugin::Runtime>();
+    auto reports = std::make_shared<vulkanscope::HostReports>([] { return javaText("getSystemReport"); });
+    vulkanscope::RegisterBuiltinPlugins(*plugins, std::move(reports));
+    plugins->load("host.reports");
+    for (const auto& feature : featureSettings) {
+        if (feature.enabled) plugins->load(feature.id);
+    }
+    ready = true;
 }
+
+/** @brief 在新帧开始前提交启停请求，避免卸载仍在执行的渲染回调。 */
+static void applyPluginChanges() {
+    for (const auto& change : pluginChanges) {
+        try {
+            if (change.second) plugins->load(change.first);
+            else plugins->unload(change.first);
+            pluginError.clear();
+        } catch (const std::exception& error) {
+            pluginError = error.what();
+            for (auto& feature : featureSettings) {
+                if (change.first == feature.id) feature.enabled = plugins->isLoaded(feature.id);
+            }
+        }
+    }
+    pluginChanges.clear();
+}
+
+/** @brief UI 只记录意图；插件运行状态在下一帧边界改变。 */
+static void pluginControls() {
+    if (!ImGui::CollapsingHeader("Plugins")) return;
+    for (auto& feature : featureSettings) {
+        bool enabled = plugins->isLoaded(feature.id);
+        if (ImGui::Checkbox(feature.label, &enabled)) {
+            pluginChanges.emplace_back(feature.id, enabled);
+            feature.enabled = enabled;
+        }
+    }
+    if (!pluginError.empty()) ImGui::TextWrapped("%s", pluginError.c_str());
+}
+
 static void panel() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplAndroid_NewFrame();
     ImGui::NewFrame();
     auto& io = ImGui::GetIO();
-    history[historyIndex] = 1000.0f * io.DeltaTime;
-    historyIndex = (historyIndex + 1) % history.size();
-    // Respect status/navigation bars and cutouts supplied by NativeActivity.
+    /** @brief 使用 NativeActivity 的内容区域避开系统栏与屏幕开孔。 */
     ARect rect = app->contentRect;
     bool valid = rect.right > rect.left && rect.bottom > rect.top;
     ImGui::SetNextWindowPos(valid ? ImVec2(rect.left, rect.top) : ImVec2(0, 0));
     ImGui::SetNextWindowSize(valid ? ImVec2(rect.right - rect.left, rect.bottom - rect.top) : io.DisplaySize);
     ImGui::Begin("VulkanScope", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
     ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.7f, 1), "VULKAN SCOPE");
-    ImGui::Text("%.1f FPS  |  %.2f ms", io.Framerate, io.Framerate > 0 ? 1000.0f/io.Framerate : 0);
-    ImGui::TextWrapped("App render rate / FIFO VSync. This is not a global game FPS monitor.");
-    ImGui::PlotLines("##frame", history.data(), history.size(), historyIndex, "Frame time (ms)", 0, 50, ImVec2(-1, ImGui::GetFontSize()*4));
-    if (systemReport.empty() || ImGui::GetTime() >= nextRefresh) {
-        systemReport = javaText("getSystemReport"); rootReport = javaText("getRootReport");
-        nextRefresh = ImGui::GetTime() + 1.0;
-    }
-    if (ImGui::CollapsingHeader("Screen & device", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("%s", systemReport.c_str());
-        ImGui::Text("Render surface: %d x %d px", window.Width, window.Height);
-    }
-    if (ImGui::CollapsingHeader("Vulkan GPU", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("%s", properties.deviceName);
-        ImGui::Text("API: %u.%u.%u", VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion), VK_VERSION_PATCH(properties.apiVersion));
-        ImGui::Text("Driver (raw): 0x%08x", properties.driverVersion);
-        ImGui::Text("Vendor / device: %04x / %04x", properties.vendorID, properties.deviceID);
-        ImGui::Text("Swapchain: %u images / FIFO", window.ImageCount);
+    plugins->emit(vulkanscope::RenderFrame{
+        io.DeltaTime, io.Framerate, ImGui::GetTime(), window.Width, window.Height,
+        properties.deviceName, properties.apiVersion, properties.driverVersion,
+        properties.vendorID, properties.deviceID, window.ImageCount
+    });
+    pluginControls();
+    if (rootReport.empty() || ImGui::GetTime() >= nextRootRefresh) {
+        rootReport = javaText("getRootReport");
+        nextRootRefresh = ImGui::GetTime() + 1.0;
     }
     if (ImGui::CollapsingHeader("Optional root diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextWrapped("Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data.");
@@ -183,6 +228,7 @@ static void panel() {
 static void render() {
     int width = ANativeWindow_getWidth(app->window), height = ANativeWindow_getHeight(app->window);
     if (width <= 0 || height <= 0) return;
+    applyPluginChanges();
     if (rebuild || width != window.Width || height != window.Height) {
         check(vkDeviceWaitIdle(device));
         ImGui_ImplVulkan_SetMinImageCount(2);
