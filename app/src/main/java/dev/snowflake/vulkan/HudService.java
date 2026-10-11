@@ -73,7 +73,7 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                 int[] geometry = nativeGeometry(getResources().getDisplayMetrics().widthPixels,
                                                 getResources().getDisplayMetrics().heightPixels,
                                                 getResources().getDisplayMetrics().density);
-                float alpha = nativeCollapsed() ? 0f : 0.8f;
+                float alpha = nativeCollapsed() ? 0f : HudTouchPolicy.opacity(HudService.this);
                 if (layout.alpha != alpha || layout.width != geometry[0] || layout.height != geometry[1] ||
                     layout.gravity != geometry[2]) {
                     layout.alpha = alpha;
@@ -159,10 +159,11 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                                                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                                                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
                                                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+                                                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
                                                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                                                     PixelFormat.TRANSLUCENT);
             layout.gravity = geometry[2];
-            layout.alpha = 0.8f;
+            layout.alpha = HudTouchPolicy.opacity(HudService.this);
             layout.setTitle("dev.snowflake.vulkan.PerformanceHUD");
             windows.addView(surface, layout);
             handler.post(update);

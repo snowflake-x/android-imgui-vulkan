@@ -140,6 +140,10 @@ public final class RootHudBootstrap {
                     invoke(builder, "setBufferSize", new Class<?>[]{int.class, int.class}, size[0], size[1]);
                     invoke(builder, "setFormat", new Class<?>[]{int.class}, PixelFormat.TRANSLUCENT);
                     layer = invoke(builder, "build", new Class<?>[]{});
+                    // Android 12+ checks occlusion even for layers without an input channel.
+                    // Only this UID-0 helper may mark its own HUD layer as trusted.
+                    if (android.os.Build.VERSION.SDK_INT >= 31)
+                        invoke(transaction, "setTrustedOverlay", new Class<?>[]{control, boolean.class}, layer, true);
                     surface = Surface.class.getConstructor().newInstance();
                     Surface.class.getMethod("copyFrom", control).invoke(surface, layer);
                 }

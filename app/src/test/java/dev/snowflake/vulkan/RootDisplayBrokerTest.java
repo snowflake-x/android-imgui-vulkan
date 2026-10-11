@@ -32,6 +32,7 @@ public class RootDisplayBrokerTest {
         assertNotNull(transaction.getMethod("setLayerStack", control, int.class));
         assertNotNull(transaction.getMethod("remove", control));
         assertNotNull(transaction.getMethod("hide", control));
+        assertNotNull(transaction.getMethod("setTrustedOverlay", control, boolean.class));
         assertNotNull(transaction.getMethod("show", control));
         assertNotNull(Surface.class.getConstructor());
         assertNotNull(Surface.class.getMethod("copyFrom", control));
