@@ -39,7 +39,8 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 
 ## 代码结构
 
-- `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、ImGui 面板与生命周期。
+- `app/src/main/cpp/main.cpp`：NativeActivity、JNI 桥接、Vulkan、触摸输入与 ImGui 帧生命周期。
+- `app/src/main/cpp/modules/`：统一的 `Module` 接口、`ModuleContext` 帧上下文、`Dashboard` 注册表及设备/GPU/root 独立面板。
 - `app/src/main/java/dev/snowflake/vulkan/MainActivity.java`：屏幕/设备信息与受限 root 查询。
 - `.github/workflows/android.yml`：自动编译、Lint、APK 上传、标签发布。
 - `app/src/main/cpp/vendor/imgui`：固定 Dear ImGui **v1.91.9b**，上游提交 `f5befd2d29e66809cd1110a152e375a7f1981f06`，附 MIT 许可证，构建时无需拉子模块。
@@ -47,3 +48,11 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 ## 真机验收
 
 安装后观察 FPS 与曲线、切换横竖屏、返回桌面再进入、锁屏再恢复；核对系统显示设置中的刷新率。分别验证无 `su`、拒绝授权、允许授权及超时场景。GPU 驱动和 root 管理器行为需要真机验证；CI 构建和 Lint 不替代运行测试。
+
+## 增加 C++ 模块
+
+1. 在 `app/src/main/cpp/modules/` 新建实现文件，继承 `Module` 并实现 `draw(const ModuleContext&)`，参考 `device_module.cpp`。缓存放在模块实例内。
+2. 在 `module.h` 声明返回 `std::unique_ptr<Module>` 的工厂，在 `Dashboard::reset()` 中按显示顺序加入工厂创建的实例。
+3. 在 `CMakeLists.txt` 的 `vulkanscope` 源文件列表加入新文件，执行 `./gradlew assembleDebug assembleRelease lintDebug`。
+
+宿主负责开始/结束 ImGui 帧与 Vulkan 提交，模块只绘制当前窗口中的内容。上下文仅在当次调用有效；模块在 Surface 初始化时创建、销毁时清理，重建后缓存重新初始化。耗时采集通过平台层或专门的后台服务执行，面板读取快照。新增业务面板无需修改 Vulkan 渲染流程。

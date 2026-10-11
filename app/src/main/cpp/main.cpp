@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "imgui.h"
+#include "modules/dashboard.h"
 #include "imgui_impl_android.h"
 #include "imgui_impl_vulkan.h"
 
@@ -24,8 +25,7 @@ static VkPhysicalDeviceProperties properties{};
 static bool ready = false, focused = false, rebuild = false, backend = false;
 static std::array<float, 180> history{};
 static int historyIndex = 0;
-static std::string systemReport, rootReport;
-static double nextRefresh = 0;
+static vulkanscope::Dashboard dashboard;
 
 static void check(VkResult result) {
     if (result < 0) throw std::runtime_error("Vulkan error: " + std::to_string(result));
@@ -66,6 +66,7 @@ static void cleanup() {
     if (instance) vkDestroyInstance(instance, nullptr);
     instance = VK_NULL_HANDLE; device = VK_NULL_HANDLE; gpu = VK_NULL_HANDLE;
     window = ImGui_ImplVulkanH_Window();
+    dashboard.clear();
     ready = false; rebuild = false;
 }
 static void initialize() {
@@ -136,7 +137,8 @@ static void initialize() {
     init.MSAASamples = VK_SAMPLE_COUNT_1_BIT; init.CheckVkResultFn = check;
     if (!ImGui_ImplVulkan_Init(&init)) throw std::runtime_error("ImGui Vulkan initialization failed");
     backend = true; ready = true;
-    history.fill(0); historyIndex = 0; nextRefresh = 0;
+    history.fill(0); historyIndex = 0;
+    dashboard.reset();
 }
 static void panel() {
     ImGui_ImplVulkan_NewFrame();
@@ -145,7 +147,7 @@ static void panel() {
     auto& io = ImGui::GetIO();
     history[historyIndex] = 1000.0f * io.DeltaTime;
     historyIndex = (historyIndex + 1) % history.size();
-    // Respect status/navigation bars and cutouts supplied by NativeActivity.
+    /** @brief 遵守 NativeActivity 提供的系统栏和屏幕缺口边界。 */
     ARect rect = app->contentRect;
     bool valid = rect.right > rect.left && rect.bottom > rect.top;
     ImGui::SetNextWindowPos(valid ? ImVec2(rect.left, rect.top) : ImVec2(0, 0));
@@ -155,28 +157,8 @@ static void panel() {
     ImGui::Text("%.1f FPS  |  %.2f ms", io.Framerate, io.Framerate > 0 ? 1000.0f/io.Framerate : 0);
     ImGui::TextWrapped("App render rate / FIFO VSync. This is not a global game FPS monitor.");
     ImGui::PlotLines("##frame", history.data(), history.size(), historyIndex, "Frame time (ms)", 0, 50, ImVec2(-1, ImGui::GetFontSize()*4));
-    if (systemReport.empty() || ImGui::GetTime() >= nextRefresh) {
-        systemReport = javaText("getSystemReport"); rootReport = javaText("getRootReport");
-        nextRefresh = ImGui::GetTime() + 1.0;
-    }
-    if (ImGui::CollapsingHeader("Screen & device", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("%s", systemReport.c_str());
-        ImGui::Text("Render surface: %d x %d px", window.Width, window.Height);
-    }
-    if (ImGui::CollapsingHeader("Vulkan GPU", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("%s", properties.deviceName);
-        ImGui::Text("API: %u.%u.%u", VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion), VK_VERSION_PATCH(properties.apiVersion));
-        ImGui::Text("Driver (raw): 0x%08x", properties.driverVersion);
-        ImGui::Text("Vendor / device: %04x / %04x", properties.vendorID, properties.deviceID);
-        ImGui::Text("Swapchain: %u images / FIFO", window.ImageCount);
-    }
-    if (ImGui::CollapsingHeader("Optional root diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextWrapped("Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data.");
-        if (ImGui::Button("Request root / refresh", ImVec2(-1, ImGui::GetFontSize()*2.5f))) {
-            javaCall("requestRootInfo"); rootReport = javaText("getRootReport");
-        }
-        ImGui::TextWrapped("%s", rootReport.c_str());
-    }
+    dashboard.draw({properties, window.Width, window.Height, window.ImageCount, javaText,
+        [](const char* name) { javaCall(name); }});
     ImGui::End();
     ImGui::Render();
 }
