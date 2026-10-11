@@ -25,6 +25,7 @@ struct Config {
     int interval = 1000, textSize = 14, opacity = 80, corner = 0;
     std::string surface, powerPath;
     std::string language = "system";
+    std::string hudStyle = "metal";
     double powerScale = 0.000001;
     std::vector<std::string> order;
     std::map<std::string, bool> enabled;

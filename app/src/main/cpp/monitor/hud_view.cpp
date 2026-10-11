@@ -144,4 +144,77 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     }
     draw.PopClipRect();
 }
+void DrawHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const Config &config,
+             const HudSnapshot &snapshot, ImFont *font) {
+    if (config.hudStyle != "rtss") {
+        DrawClassicHud(draw, origin, size, config, snapshot, font);
+        return;
+    }
+    if (!font) font = ImGui::GetFont();
+    const float f = size.fontSize, pad = .4f * f;
+    const float left = origin.x + pad, right = origin.x + size.width - pad;
+    float y = origin.y + pad;
+    const ImU32 orange = IM_COL32(255, 173, 65, 255);
+    const ImU32 lime = IM_COL32(148, 237, 107, 255);
+    const ImU32 cyan = IM_COL32(89, 218, 242, 255);
+    const ImU32 purple = IM_COL32(224, 149, 244, 255);
+    draw.PushClipRect(origin, ImVec2(origin.x + size.width, origin.y + size.height), true);
+    draw.AddRectFilled(origin, ImVec2(origin.x + size.width, origin.y + size.height),
+                       IM_COL32(0, 0, 0, static_cast<int>(config.opacity * 2.55f)));
+    auto text = [&](float x, std::string content, ImU32 color, float scale) {
+        const float pixels = f * scale;
+        auto width = [&](const std::string &s) { return font->CalcTextSizeA(pixels, 1e6f, 0, s.c_str()).x; };
+        if (width(content) > right - x) {
+            /** @brief 按完整 UTF-8 码点截断，避免国际化系统字段产生无效字节序列。 */
+            while (!content.empty() && width(content + "...") > right - x) {
+                auto end = content.size() - 1;
+                while (end > 0 && (static_cast<unsigned char>(content[end]) & 0xc0) == 0x80) --end;
+                content.resize(end);
+            }
+            content += "...";
+        }
+        const float shadow = std::max(1.0f, .045f * f);
+        draw.AddText(font, pixels, ImVec2(x + shadow, y + shadow), IM_COL32(0, 0, 0, 230), content.c_str());
+        draw.AddText(font, pixels, ImVec2(x, y), color, content.c_str());
+    };
+    for (const auto &row : RtssRows(config, snapshot)) {
+        const ImU32 color = row.group == "gpu" || row.group == "frame" ? orange :
+            row.group == "cpu" ? lime : row.group == "memory" ? cyan : row.group == "api" ? purple : dim;
+        if (row.group == "detail") text(left, row.label + ": " + row.text, color, row.scale);
+        else {
+            text(left, row.label, color, row.scale);
+            text(row.label.empty() ? left : left + 5.6f * f, row.text, color, row.scale);
+        }
+        y += row.scale * 1.2f * f;
+    }
+    if (config.hudGraph) {
+        const float top = y + .15f * f, bottom = y + 2.35f * f;
+        draw.AddRect(ImVec2(left, top), ImVec2(right, bottom), IM_COL32(150, 110, 60, 150));
+        double ceiling = 33.33;
+        if (config.has("frame_time"))
+            for (const auto &n : snapshot.presentGraph)
+                if (n && std::isfinite(*n)) ceiling = std::max(ceiling, *n * 1.1);
+        std::optional<ImVec2> previous;
+        const auto count = std::min<std::size_t>(200, snapshot.presentGraph.size());
+        if (config.has("frame_time")) {
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto &n = snapshot.presentGraph[snapshot.presentGraph.size() - count + i];
+                if (!n || !std::isfinite(*n) || *n < 0) { previous.reset(); continue; }
+                const ImVec2 point(left + (right - left) * (200 - count + i) / 199.0f,
+                    bottom - static_cast<float>(std::min(*n / ceiling, 1.0)) * (bottom - top));
+                if (previous) draw.AddLine(*previous, point, orange, std::max(1.0f, .06f * f));
+                previous = point;
+            }
+        }
+        y += 2.6f * f;
+    }
+    const auto captions = HudCaptions(config, snapshot);
+    for (std::size_t i = 0; i < captions.size(); ++i) {
+        if (i == 2) continue; /** @brief GPU 单位和共享内存含义已在 RTSS 主行显示。 */
+        text(left, captions[i], dim, .55f);
+        y += .65f * f;
+    }
+    draw.PopClipRect();
+}
+
 }

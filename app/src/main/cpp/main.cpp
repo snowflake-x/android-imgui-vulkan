@@ -200,7 +200,7 @@ static void initialize() {
             using namespace vulkanscope::monitor;
             const auto config = NativeSession().config();
             const auto size = MeasureHud(config, ImGui::GetFontSize() * config.textSize / 18.0f, ImGui::GetContentRegionAvail().x, 10000);
-            DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, NativeSession().hud(), hudFont);
+            DrawHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, NativeSession().hud(), hudFont);
             ImGui::Dummy(ImVec2(size.width, size.height));
         });
     vulkanscope::RegisterPerformanceHudPlugin(*plugins, std::move(hud));

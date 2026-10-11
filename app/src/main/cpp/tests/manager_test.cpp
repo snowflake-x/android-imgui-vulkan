@@ -39,18 +39,22 @@ int main() {
         require(!manager.command("root", "yes"));
         require(!manager.command("language", "invalid"));
         require(!manager.command("powerPath", "/tmp/not-sysfs"));
+        require(manager.command("hudStyle", "rtss"));
+        require(!manager.command("hudStyle", "invalid"));
         require(manager.command("opacity", "75"));
         require(manager.command("surface", "游戏\"\\\n"));
         auto snapshot = manager.snapshot(ui::Language::English);
         require(snapshot.find("\\u000a") != std::string::npos);
+        require(snapshot.find("\"hudStyle\":\"rtss\"") != std::string::npos);
         require(snapshot.find("\"opacity\":75") != std::string::npos);
         require(snapshot.find("\"fresh\":false") != std::string::npos);
         auto saved = monitor::LoadConfig(std::string(path) + "/native-hud.conf");
+        require(saved.hudStyle == "rtss");
         require(saved.language == "zh-Hans" && !saved.autoRoot && saved.managerPlugins == 6 && !saved.rootDisplay);
         require(manager.command("resetPerformance", "true"));
         saved = monitor::LoadConfig(std::string(path) + "/native-hud.conf");
         require(saved.language == "zh-Hans" && !saved.autoRoot && saved.managerPlugins == 6);
-        require(!saved.liveUpdates);
+        require(!saved.liveUpdates && saved.hudStyle == "metal");
         require(saved.rootDisplay && saved.surface.empty() && saved.opacity == monitor::Config{}.opacity);
     }
     std::filesystem::remove_all(path);

@@ -330,6 +330,10 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
             RangeSetting(tr("Text size", "文字大小"), "textSize", config.optInt("textSize", 14), 10..24, change)
             RangeSetting(tr("Opacity", "不透明度"), "opacity", config.optInt("opacity", 80), 20..100, change)
         }
+        SuperDropdown(title = tr("Overlay style", "悬浮显示风格"),
+            items = listOf("MetalHUD", tr("Afterburner / RTSS", "微星小飞机 / RTSS")),
+            selectedIndex = if (config.optString("hudStyle", "metal") == "rtss") 1 else 0,
+            onSelectedIndexChange = { change("hudStyle", if (it == 1) "rtss" else "metal") })
         SuperDropdown(title = tr("Position", "显示位置"), selectedIndex = config.optInt("corner"),
             items = listOf(tr("Top left", "左上"), tr("Top right", "右上"), tr("Bottom left", "左下"), tr("Bottom right", "右下")),
             onSelectedIndexChange = { change("corner", it.toString()) })

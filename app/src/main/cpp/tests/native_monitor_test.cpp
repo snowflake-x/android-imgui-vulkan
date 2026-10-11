@@ -201,6 +201,7 @@ void config() {
     c.hudGraph = false;
     c.hudExtras = true;
     c.liveUpdates = true;
+    c.hudStyle = "rtss";
     c.surface = "SurfaceView[com.game.app] 'quoted'";
     c.powerPath = "/sys/sensor/value";
     c.textSize = 100;
@@ -210,6 +211,7 @@ void config() {
     require(SaveConfig(path, c, error), "save config");
     auto loaded = LoadConfig(path);
     require(loaded.language == "zh-Hans", "persist language preference");
+    require(loaded.hudStyle == "rtss", "persist overlay style");
     require(loaded.liveUpdates, "persist live notification opt-in");
     require(!loaded.autoRoot, "persist startup root opt-out");
     require(!loaded.hudGraph && loaded.hudExtras, "persist classic HUD options");
@@ -220,6 +222,7 @@ void config() {
     require(!SaveConfig(path + "/missing", c, error), "failed save is reported");
     std::ofstream(path) << "VulkanScopeHUD 1\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\nfps 0\n";
     auto legacy = LoadConfig(path);
+    require(legacy.hudStyle == "metal", "legacy defaults to MetalHUD");
     require(!legacy.liveUpdates, "legacy configurations do not opt into live notifications");
     require(legacy.hudGraph && !legacy.hudExtras && !legacy.has("fps") && legacy.corner == 2,
             "version one preserves selections and adopts classic defaults");
@@ -231,6 +234,13 @@ void config() {
     const auto versionThree = LoadConfig(path);
     require(versionThree.autoRoot && !versionThree.root && !versionThree.has("fps"),
             "legacy configuration adopts automatic startup authorization without fabricating a grant");
+    std::ofstream(path) << "VulkanScopeHUD 7\n1 250 16 90 2 0.000001\n\"layer\"\n\"\"\n0 1\n\"en\"\n0\n6\n1\n1\nfps 0\n";
+    const auto versionSeven = LoadConfig(path);
+    require(versionSeven.hudStyle == "metal" && versionSeven.liveUpdates && versionSeven.interval == 250 &&
+            !versionSeven.has("fps") && versionSeven.managerPlugins == 6,
+            "version seven retains fields and settings when adding styles");
+    c.hudStyle = "invalid";
+    require(SaveConfig(path, c, error) && LoadConfig(path).hudStyle == "metal", "unknown style normalizes");
     std::ofstream(path) << "bad config";
     require(!LoadConfig(path).root, "invalid config fails closed");
     std::remove(path.c_str());

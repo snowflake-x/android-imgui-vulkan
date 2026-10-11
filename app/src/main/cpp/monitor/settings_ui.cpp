@@ -61,9 +61,15 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     auto &session = NativeSession();
     auto config = session.config();
     bool changed = false;
-    ImGui::SeparatorText(Text(language, "Classic Metal HUD"));
+    ImGui::SeparatorText(Text(language, "Overlay style"));
+    int style = config.hudStyle == "rtss" ? 1 : 0;
+    const char *styles[] = {"MetalHUD", "Afterburner / RTSS"};
+    if (ImGui::Combo(ui::FieldLabel(language, "Overlay style").c_str(), &style, styles, 2)) {
+        config.hudStyle = style == 1 ? "rtss" : "metal";
+        changed = true;
+    }
     const auto size = MeasureHud(config, ImGui::GetFontSize() * config.textSize / 18.0f, ImGui::GetContentRegionAvail().x, 10000);
-    DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, session.hud(), hudFont);
+    DrawHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size, config, session.hud(), hudFont);
     ImGui::Dummy(ImVec2(size.width, size.height));
     changed |= ui::Toggle(Label(language, "Frame history graph").c_str(), &config.hudGraph);
     changed |= ui::Toggle(Label(language, "Additional sensor rows").c_str(), &config.hudExtras);

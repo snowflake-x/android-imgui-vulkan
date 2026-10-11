@@ -275,5 +275,64 @@ int main(int argc, char **argv) {
     require(ImGui::GetDrawData()->TotalVtxCount > 0);
     if (argc > 1)
         test_preview::SavePreview(argv[1], *ImGui::GetDrawData(), atlas, aw, ah);
+
+    config.hudStyle = "rtss";
+    config.root = true;
+    config.enabled["gpu_load"] = config.enabled["gpu_freq"] = config.enabled["cpu_load"] = true;
+    config.enabled["graphics_api"] = true;
+    sample.values["gpu_load"] = "82%";
+    sample.values["gpu_freq"] = "903 MHz";
+    sample.values["cpu_load"] = "24%";
+    sample.values["cpu_freq"] = "2400 MHz";
+    sample.values["graphics_api_status"] = "mapped";
+    sample.values["graphics_api"] = "Vulkan (loaded)";
+    sample.values["engine_name"] = "Unity";
+    sample.status = "SurfaceFlinger actual-present";
+    auto rows = RtssRows(config, sample);
+    auto contains = [&](const std::string &label, const std::string &text) {
+        return std::any_of(rows.begin(), rows.end(), [&](const auto &row) {
+            return row.label == label && row.text.find(text) != std::string::npos;
+        });
+    };
+    require(contains("GPU time", "ms/batch") && contains("GPU mem", "MB shared"));
+    require(contains("API", "Loaded: Vulkan"));
+    sample.values["graphics_api_status"] = "no_calls";
+    rows = RtssRows(config, sample);
+    require(contains("API", "no calls") && !contains("API", "API:"));
+    sample.values["graphics_api_status"] = "mapped";
+    sample.gpuUnit = "ms/window";
+    rows = RtssRows(config, sample);
+    require(contains("GPU time", "ms/window"));
+    config.enabled["gpu_time"] = false;
+    config.enabled["fps"] = false;
+    rows = RtssRows(config, sample);
+    require(!contains("GPU time", "") && contains("FPS", "OFF"));
+    config.enabled["gpu_time"] = config.enabled["fps"] = true;
+    for (bool extras : {false, true}) {
+        config.hudExtras = extras;
+        for (bool graph : {false, true}) {
+            config.hudGraph = graph;
+            for (float width : {120.f, 320.f, 1080.f}) {
+                const auto size = MeasureHud(config, 40, width, 200);
+                require(size.width <= width && size.height <= 200 && size.fontSize > 0);
+                float occupied = .8f + (graph ? 2.6f : 0.f) + (config.has("engine_name") ? 3 : 2) * .65f;
+                for (const auto &row : RtssRows(config, sample)) occupied += row.scale * 1.2f;
+                require(occupied * size.fontSize <= size.height + .01f);
+                ImGui::NewFrame();
+                DrawHud(*ImGui::GetForegroundDrawList(), ImVec2(0, 0), size, config, sample);
+                ImGui::Render();
+                require(ImGui::GetDrawData()->TotalVtxCount > 0);
+                for (int n = 0; n < ImGui::GetDrawData()->CmdListsCount; ++n)
+                    for (const auto &vertex : ImGui::GetDrawData()->CmdLists[n]->VtxBuffer)
+                        require(std::isfinite(vertex.pos.x) && std::isfinite(vertex.pos.y));
+            }
+        }
+    }
+    config.hudExtras = false;
+    config.hudGraph = true;
+    ImGui::NewFrame();
+    DrawHud(*ImGui::GetForegroundDrawList(), ImVec2(32, 25), MeasureHud(config, 32, 896, 550), config, sample);
+    ImGui::Render();
+    if (argc > 2) test_preview::SavePreview(argv[2], *ImGui::GetDrawData(), atlas, aw, ah);
     ImGui::DestroyContext(context);
 }

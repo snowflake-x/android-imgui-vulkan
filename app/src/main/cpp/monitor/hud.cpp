@@ -174,7 +174,64 @@ std::vector<std::string> HudCaptions(const Config &config, const HudSnapshot &sn
                         [](char ch) { return ch == '\n' || ch == '\r' || ch == '\t'; }, ' ');
     return result;
 }
+
+std::vector<RtssRow> RtssRows(const Config &config, const HudSnapshot &snapshot) {
+    std::vector<RtssRow> rows;
+    auto field = [&](const char *id) {
+        const auto it = snapshot.values.find(id);
+        return it == snapshot.values.end() || it->second.empty() ? std::string{"N/A"} : it->second;
+    };
+    auto number = [](const std::optional<double> &n) { return n ? Format(*n, 2) : "--"; };
+    auto pair = [&](const char *group, const char *label, const char *a, const char *b) {
+        if (!config.has(a) && !config.has(b)) return;
+        std::string text = config.has(a) ? field(a) : "";
+        if (config.has(b)) text += (text.empty() ? "" : "  |  ") + field(b);
+        rows.push_back({group, label, text});
+    };
+    if (config.has("gpu_model")) rows.push_back({"gpu", "", field("gpu_model"), .8f});
+    pair("gpu", "GPU", "gpu_load", "gpu_freq");
+    if (config.has("gpu_time"))
+        rows.push_back({"gpu", "GPU time", number(snapshot.gpu.current) + " " +
+            (snapshot.gpuUnit.empty() ? "ms (unavailable)" : snapshot.gpuUnit)});
+    if (config.has("gpu_memory"))
+        rows.push_back({"gpu", "GPU mem", number(snapshot.gpuMb) + " MB shared"});
+    pair("cpu", "CPU", "cpu_load", "cpu_freq");
+    if (config.has("memory")) rows.push_back({"memory", "RAM", field("memory")});
+    if (config.has("app_memory"))
+        rows.push_back({"memory", "APP", number(snapshot.processMb) + " MB RSS"});
+    if (config.has("graphics_api")) {
+        auto api = GraphicsApiCaption(config, snapshot);
+        if (api.rfind("API: ", 0) == 0) api.erase(0, 5);
+        rows.push_back({"api", "API", api, .8f});
+    }
+    rows.push_back({"frame", "FPS", config.has("fps") ? number(snapshot.fps.current) : "OFF", 1.4f});
+    rows.push_back({"frame", "Pre", config.has("frame_time") ? number(snapshot.present.current) + " ms" : "OFF"});
+    if (config.hudExtras) {
+        const std::vector<std::string> core = {"gpu_model", "gpu_load", "gpu_freq", "gpu_time", "gpu_memory",
+            "cpu_load", "cpu_freq", "memory", "app_memory", "graphics_api", "fps", "frame_time",
+            "foreground", "engine_name"};
+        for (const auto &id : config.order) {
+            if (!config.has(id) || std::find(core.begin(), core.end(), id) != core.end()) continue;
+            const auto metric = std::find_if(Metrics().begin(), Metrics().end(),
+                [&](const auto &m) { return id == m.id; });
+            if (metric != Metrics().end()) rows.push_back({"detail", metric->label, field(id.c_str()), .65f});
+        }
+    }
+    for (auto &row : rows)
+        std::replace_if(row.text.begin(), row.text.end(),
+            [](char ch) { return ch == '\n' || ch == '\r' || ch == '\t'; }, ' ');
+    return rows;
+}
+
 HudSize MeasureHud(const Config &config, float fontSize, float maxWidth, float maxHeight) {
+    if (config.hudStyle == "rtss") {
+        float unitsHigh = .8f + (config.hudGraph ? 2.6f : 0.0f) +
+            (config.has("engine_name") ? 3 : 2) * .65f;
+        for (const auto &row : RtssRows(config, {})) unitsHigh += row.scale * 1.2f;
+        constexpr float unitsWide = 24.0f;
+        fontSize = std::max(1.0f, std::min({fontSize, maxWidth / unitsWide, maxHeight / unitsHigh}));
+        return {std::min(maxWidth, unitsWide * fontSize), std::min(maxHeight, unitsHigh * fontSize), fontSize};
+    }
     float rows = 6.0f;
     if (config.hudExtras) {
         for (const auto &id : config.order)

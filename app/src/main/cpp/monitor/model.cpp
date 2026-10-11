@@ -108,6 +108,7 @@ void ApplyMetricPreset(Config &config, MetricPreset preset) {
 }
 void Config::normalize() {
     managerPlugins &= 7;
+    if (hudStyle != "metal" && hudStyle != "rtss") hudStyle = "metal";
     if (language != "system" && language != "en" && language != "zh-Hans") language = "system";
     if (std::find(SampleIntervals.begin(), SampleIntervals.end(), interval) == SampleIntervals.end())
         interval = 1000;
@@ -134,13 +135,13 @@ bool SaveConfig(const std::string &path, Config c, std::string &error) {
     c.normalize();
     std::ofstream out(path + ".tmp", std::ios::trunc);
     out.imbue(std::locale::classic());
-    out << "VulkanScopeHUD 7\n"
+    out << "VulkanScopeHUD 8\n"
         << c.root << ' ' << c.interval << ' ' << c.textSize << ' ' << c.opacity << ' ' << c.corner << ' '
         << std::setprecision(17) << c.powerScale << '\n'
         << std::quoted(c.surface) << '\n'
         << std::quoted(c.powerPath) << '\n'
         << c.hudGraph << ' ' << c.hudExtras << '\n'
-        << std::quoted(c.language) << '\n' << c.autoRoot << '\n' << c.managerPlugins << '\n' << c.rootDisplay << '\n' << c.liveUpdates << '\n';
+        << std::quoted(c.language) << '\n' << c.autoRoot << '\n' << c.managerPlugins << '\n' << c.rootDisplay << '\n' << c.liveUpdates << '\n' << std::quoted(c.hudStyle) << '\n';
     for (const auto &id : c.order)
         out << id << ' ' << c.has(id) << '\n';
     out.close();
@@ -158,7 +159,7 @@ Config LoadConfig(const std::string &path) {
     in.imbue(std::locale::classic());
     std::string magic;
     int version;
-    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 7))
+    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 8))
         return c;
     if (!(in >> c.root >> c.interval >> c.textSize >> c.opacity >> c.corner >> c.powerScale >>
           std::quoted(c.surface) >> std::quoted(c.powerPath)))
@@ -170,6 +171,7 @@ Config LoadConfig(const std::string &path) {
     if (version >= 5 && !(in >> c.managerPlugins)) return Config{};
     if (version >= 6 && !(in >> c.rootDisplay)) return Config{};
     if (version >= 7 && !(in >> c.liveUpdates)) return Config{};
+    if (version >= 8 && !(in >> std::quoted(c.hudStyle))) return Config{};
     c.order.clear();
     std::string id;
     bool enabled;

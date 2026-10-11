@@ -72,6 +72,7 @@ constexpr Entry entries[] = {
     {"Vendor / device: %04x / %04x", "厂商 / 设备：%04x / %04x"},
     {"Swapchain: %u images / FIFO", "交换链：%u 张图像 / FIFO"},
     {"Classic Metal HUD", "经典 Metal HUD"},
+    {"Overlay style", "悬浮显示风格"},
     {"Frame history graph", "帧历史曲线"},
     {"Additional sensor rows", "附加传感器行"},
     {"Enable root sampling", "启用 Root 采样"},

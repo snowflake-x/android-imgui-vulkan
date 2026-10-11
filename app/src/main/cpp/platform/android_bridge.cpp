@@ -605,7 +605,7 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSur
                             return;
                         const auto display = ImGui::GetIO().DisplaySize;
                         const auto size = monitor::MeasureHud(config, config.textSize * density, display.x, display.y);
-                        monitor::DrawClassicHud(*ImGui::GetForegroundDrawList(), ImVec2(0, 0), size, config, snapshot);
+                        monitor::DrawHud(*ImGui::GetForegroundDrawList(), ImVec2(0, 0), size, config, snapshot);
 
                     });
                 }

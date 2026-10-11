@@ -58,6 +58,7 @@ std::string Manager::snapshot(ui::Language language) {
         << ",\"rootDisplay\":" << (c.rootDisplay ? "true" : "false")
         << ",\"liveUpdates\":" << (c.liveUpdates ? "true" : "false")
         << ",\"hudGraph\":" << (c.hudGraph ? "true" : "false") << ",\"hudExtras\":" << (c.hudExtras ? "true" : "false")
+        << ",\"hudStyle\":" << text(c.hudStyle)
         << ",\"interval\":" << c.interval << ",\"textSize\":" << c.textSize << ",\"opacity\":" << c.opacity
         << ",\"corner\":" << c.corner << ",\"surface\":" << text(c.surface) << ",\"powerPath\":" << text(c.powerPath)
         << ",\"powerScale\":" << c.powerScale << ",\"language\":" << text(c.language) << "},\"plugins\":[";
@@ -115,6 +116,10 @@ bool Manager::command(const std::string &key, const std::string &value) {
         else if (key == "rootDisplay") boolean(c.rootDisplay);
         else if (key == "hudGraph") boolean(c.hudGraph);
         else if (key == "hudExtras") boolean(c.hudExtras);
+        else if (key == "hudStyle") {
+            if (value == "metal" || value == "rtss") c.hudStyle = value;
+            else valid = false;
+        }
         else if (key == "interval") {
             if (value != "250" && value != "500" && value != "1000" && value != "2000" && value != "5000") valid = false;
             else c.interval = std::stoi(value);
