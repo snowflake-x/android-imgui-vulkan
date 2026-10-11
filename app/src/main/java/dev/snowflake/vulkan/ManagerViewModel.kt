@@ -50,7 +50,7 @@ internal class ManagerViewModel(application: Application) : AndroidViewModel(app
 
     private suspend fun refresh() {
         val snapshot = withContext(NativeManager.dispatcher) {
-            JSONObject(NativeManager.snapshot().toString(Charsets.UTF_8))
+            JSONObject(NativeManager.snapshot().toString(Charsets.UTF_8)).put("liveUpdatesStatus", HudNotification.status(getApplication()))
         }
         mutable.value = mutable.value.copy(data = snapshot, loading = false)
     }

@@ -18,6 +18,7 @@ struct Config {
     bool root = false;
     bool autoRoot = true;
     bool rootDisplay = true;
+    bool liveUpdates = false;
     unsigned managerPlugins = 7;
     bool hudGraph = true, hudExtras = false;
     int interval = 1000, textSize = 14, opacity = 80, corner = 0;

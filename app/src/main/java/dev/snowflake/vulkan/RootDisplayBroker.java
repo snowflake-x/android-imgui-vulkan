@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /** Revocable Surface lifecycle channel. The native host owns layout, collection and rendering. */
 final class RootDisplayBroker extends Binder {
-    static final String DESCRIPTOR = "dev.snowflake.vulkan.RootSurface.v1";
+    static final String DESCRIPTOR = "dev.snowflake.vulkan.RootSurface.v2";
     static final int STATE = IBinder.FIRST_CALL_TRANSACTION;
     static final int ATTACH = STATE + 1;
     static final int DETACH = STATE + 2;

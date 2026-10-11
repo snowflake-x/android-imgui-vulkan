@@ -35,6 +35,9 @@ class MainActivity : ComponentActivity() {
             when (action) {
                 0 -> startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
                 1 -> if (HudService.usesRootDisplay() || Settings.canDrawOverlays(this)) startForegroundService(Intent(this, HudService::class.java)) else hudAction(0)
+                5 -> startActivity(HudNotification.settings(this))
+                6 -> startService(Intent(this, HudService::class.java).setAction(HudNotification.COLLAPSE))
+                7 -> startService(Intent(this, HudService::class.java).setAction(HudNotification.EXPAND))
                 2 -> stopService(Intent(this, HudService::class.java))
                 4 -> if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }

@@ -18,7 +18,7 @@ import java.lang.reflect.Method;
  * Android views, metric collection, preference persistence or native library loading occurs here.
  */
 public final class RootHudBootstrap {
-    private static final String DESCRIPTOR = "dev.snowflake.vulkan.RootSurface.v1";
+    private static final String DESCRIPTOR = RootDisplayBroker.DESCRIPTOR;
     private static volatile long heartbeat = SystemClock.uptimeMillis();
 
     private RootHudBootstrap() {}
@@ -132,7 +132,7 @@ public final class RootHudBootstrap {
                     if (reply.readInt() == 0) break;
                     size = reply.createIntArray();
                 } finally { reply.recycle(); }
-                if (size == null || size.length != 3 || size[0] < 1 || size[1] < 1 || size[0] > width || size[1] > height)
+                if (size == null || size.length != 4 || size[0] < 1 || size[1] < 1 || size[0] > width || size[1] > height)
                     throw new IllegalStateException("Invalid HUD size");
                 if (layer == null) {
                     Object builder = builderClass.getConstructor().newInstance();
@@ -149,7 +149,7 @@ public final class RootHudBootstrap {
                 invoke(transaction, "setLayer", new Class<?>[]{control, int.class}, layer, Integer.MAX_VALUE - 1024);
                 invoke(transaction, "setPosition", new Class<?>[]{control, float.class, float.class}, layer, (float) x, (float) y);
                 invoke(transaction, "setBufferSize", new Class<?>[]{control, int.class, int.class}, layer, size[0], size[1]);
-                invoke(transaction, "show", new Class<?>[]{control}, layer);
+                invoke(transaction, size[3] == 0 ? "hide" : "show", new Class<?>[]{control}, layer);
                 invoke(transaction, "apply", new Class<?>[]{});
                 if (size[0] != previousWidth || size[1] != previousHeight || density != previousDensity) {
                     Parcel attach = data();

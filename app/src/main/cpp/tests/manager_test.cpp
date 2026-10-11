@@ -17,6 +17,13 @@ int main() {
         require(manager.command("language", "zh-Hans"));
         require(manager.command("autoRoot", "false"));
         require(session.config().rootDisplay);
+        require(!session.config().liveUpdates);
+        require(manager.command("liveUpdates", "true"));
+        require(!manager.command("liveUpdates", "invalid"));
+        session.collapse(true);
+        require(manager.snapshot(ui::Language::English).find("\"hudCollapsed\":true") != std::string::npos);
+        session.stop();
+        require(!session.collapsed());
         require(manager.command("rootDisplay", "false"));
         require(manager.command("plugin:device-info", "false"));
         require((session.config().managerPlugins & 1u) == 0);
@@ -37,6 +44,7 @@ int main() {
         require(manager.command("resetPerformance", "true"));
         saved = monitor::LoadConfig(std::string(path) + "/native-hud.conf");
         require(saved.language == "zh-Hans" && !saved.autoRoot && saved.managerPlugins == 6);
+        require(!saved.liveUpdates);
         require(saved.rootDisplay && saved.surface.empty() && saved.opacity == monitor::Config{}.opacity);
     }
     std::filesystem::remove_all(path);

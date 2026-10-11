@@ -129,6 +129,7 @@ internal fun ManagerApp(
                                 item { TextButton(tr("Metric guide", "指标说明"), {
                                     helpReturn = "performance_settings"; screen = "metric_help"
                                 }, Modifier.fillMaxWidth()) }
+                                item { LiveUpdateSettings(state, change, action) }
                                 item { PerformanceRootSettings(state, change) }
                                 item { DisplaySettings(state, change) }
                                 item { SectionTitle(tr("Fields and order", "字段与顺序")) }
@@ -412,4 +413,34 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
 @Composable private fun ManagerPreview() {
     val data = JSONObject("""{"rootAccess":"granted","config":{"language":"zh-Hans","root":true,"autoRoot":true},"running":false,"plugins":[{"id":"performance-hud","enabled":true},{"id":"gpu-info","enabled":true},{"id":"device-info","enabled":true}],"values":{"gpu_model":"Adreno (TM) 830","gpu_api":"1.3.284","gpu_driver":"2150760522"},"system":"设备: OnePlus PJZ110\nAndroid: 16 (API 36)\nCPU 核心数: 8\n显示: 3168 x 1440\n刷新率: 120 Hz"}""")
     ManagerApp(ManagerState(data = data, loading = false), { _, _ -> }, { _, _ -> }, {})
+}
+
+/** Performance-only controls. The service verifies recovery notifications before hiding the HUD. */
+@Composable
+private fun LiveUpdateSettings(state: ManagerState, change: (String, String) -> Unit, action: (Int) -> Unit) {
+    val enabled = state.config.optBoolean("liveUpdates")
+    val collapsed = state.data.optBoolean("hudCollapsed")
+    val status = state.data.optString("liveUpdatesStatus")
+    Card {
+        SuperSwitch(title = tr("Fluid Cloud / Live Updates", "流体云 / 实时活动"),
+            summary = tr("Allow the HUD to collapse into a system live notification", "允许将 HUD 收起到系统实时通知"),
+            checked = enabled, onCheckedChange = { change("liveUpdates", it.toString()) })
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Description(tr("Android 16+ requests a system capsule with live FPS. ColorOS decides whether to promote it; otherwise use the notification card to expand the HUD. Sampling continues while collapsed.",
+                "Android 16 及以上可申请带实时 FPS 的系统胶囊。是否进入流体云由 ColorOS 决定；未提升时可从通知卡片展开 HUD。收起期间继续采样。"))
+            Description(when (status) {
+                "promoted" -> tr("System reports this notification as promoted", "系统已将通知提升为实时活动")
+                "eligible" -> tr("Promotion allowed; capsule display is not confirmed", "允许实时活动；尚未确认系统显示胶囊")
+                "blocked" -> tr("Notifications blocked: enable them before collapsing", "通知被禁用：开启通知后才能收起")
+                "unsupported" -> tr("This Android version supports the notification card only", "当前 Android 版本仅支持普通通知卡片")
+                "not_allowed" -> tr("Live Updates not allowed; ordinary notification remains available", "系统未允许实时活动；仍可使用普通通知卡片")
+                else -> tr("System capsule capability could not be confirmed", "尚无法确认系统胶囊支持状态")
+            })
+            TextButton(tr("System notification settings", "系统通知设置"), { action(5) }, Modifier.fillMaxWidth())
+            if (state.running && (enabled || collapsed)) TextButton(
+                if (collapsed) tr("Expand HUD", "展开 HUD") else tr("Collapse HUD", "收起 HUD"),
+                { action(if (collapsed) 7 else 6) }, Modifier.fillMaxWidth(),
+                enabled = collapsed || status != "blocked")
+        }
+    }
 }

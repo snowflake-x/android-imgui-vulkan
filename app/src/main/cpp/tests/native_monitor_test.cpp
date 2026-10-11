@@ -200,6 +200,7 @@ void config() {
     c.language = "zh-Hans";
     c.hudGraph = false;
     c.hudExtras = true;
+    c.liveUpdates = true;
     c.surface = "SurfaceView[com.game.app] 'quoted'";
     c.powerPath = "/sys/sensor/value";
     c.textSize = 100;
@@ -209,6 +210,7 @@ void config() {
     require(SaveConfig(path, c, error), "save config");
     auto loaded = LoadConfig(path);
     require(loaded.language == "zh-Hans", "persist language preference");
+    require(loaded.liveUpdates, "persist live notification opt-in");
     require(!loaded.autoRoot, "persist startup root opt-out");
     require(!loaded.hudGraph && loaded.hudExtras, "persist classic HUD options");
     require(loaded.root && loaded.surface == c.surface && loaded.textSize == 24 && loaded.interval == 1000 &&
@@ -218,6 +220,7 @@ void config() {
     require(!SaveConfig(path + "/missing", c, error), "failed save is reported");
     std::ofstream(path) << "VulkanScopeHUD 1\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\nfps 0\n";
     auto legacy = LoadConfig(path);
+    require(!legacy.liveUpdates, "legacy configurations do not opt into live notifications");
     require(legacy.hudGraph && !legacy.hudExtras && !legacy.has("fps") && legacy.corner == 2,
             "version one preserves selections and adopts classic defaults");
     std::ofstream(path) << "VulkanScopeHUD 2\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\n0 1\nfps 0\n";

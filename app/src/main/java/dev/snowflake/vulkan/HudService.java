@@ -1,9 +1,7 @@
 package dev.snowflake.vulkan;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.graphics.PixelFormat;
@@ -30,7 +28,26 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     private boolean rootMode;
     private RootDisplayBroker rootBroker;
     private long rootStartedAt;
-    private static final String STOP = "dev.snowflake.vulkan.hud.STOP";
+    private long lastNotificationAt;
+
+    private Notification notification() {
+        try {
+            org.json.JSONObject text = new org.json.JSONObject(nativeLiveText());
+            String language = text.optString("language");
+            boolean chinese = "zh-Hans".equals(language) || ("system".equals(language) &&
+                getResources().getConfiguration().getLocales().get(0).getLanguage().equals("zh"));
+            return HudNotification.build(this, nativeLiveUpdates(), nativeCollapsed(), chinese,
+                text.optString("short", "-- FPS"), text.optString("body"));
+        } catch (org.json.JSONException error) { throw new IllegalStateException(error); }
+    }
+
+    private void updateNotification() {
+        if (nativeCollapsed() && (!nativeLiveUpdates() || !HudNotification.available(this))) nativeCollapse(false);
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastNotificationAt < 1000) return;
+        getSystemService(NotificationManager.class).notify(HudNotification.ID, notification());
+        lastNotificationAt = now;
+    }
 
     private final Runnable update = new Runnable() {
         @Override
@@ -41,6 +58,8 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                 stopSelf();
                 return;
             }
+            try { updateNotification(); }
+            catch (RuntimeException error) { nativeCollapse(false); }
             if (rootMode) {
                 if (!rootBroker.attached() && android.os.SystemClock.uptimeMillis() - rootStartedAt > 30000) {
                     nativeError("Root display startup timed out; check root authorization and firmware SurfaceControl support");
@@ -54,8 +73,10 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                 int[] geometry = nativeGeometry(getResources().getDisplayMetrics().widthPixels,
                                                 getResources().getDisplayMetrics().heightPixels,
                                                 getResources().getDisplayMetrics().density);
-                if (layout.width != geometry[0] || layout.height != geometry[1] ||
+                float alpha = nativeCollapsed() ? 0f : 0.8f;
+                if (layout.alpha != alpha || layout.width != geometry[0] || layout.height != geometry[1] ||
                     layout.gravity != geometry[2]) {
+                    layout.alpha = alpha;
                     layout.width = geometry[0];
                     layout.height = geometry[1];
                     layout.gravity = geometry[2];
@@ -79,44 +100,43 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     /** Starts the Android foreground lifetime and supplies a translucent Surface to C++. */
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || STOP.equals(intent.getAction())) {
+        if (intent == null || HudNotification.STOP.equals(intent.getAction())) {
             stopSelf();
             return START_NOT_STICKY;
         }
-        if (started)
+        if (started) {
+            try {
+                if (HudNotification.EXPAND.equals(intent.getAction())) nativeCollapse(false);
+                if (HudNotification.COLLAPSE.equals(intent.getAction()) && nativeLiveUpdates() && HudNotification.available(this)) {
+                    // Establish the recovery notification before hiding either display backend.
+                    getSystemService(NotificationManager.class).notify(HudNotification.ID, notification());
+                    nativeCollapse(true);
+                }
+                lastNotificationAt = 0;
+                updateNotification();
+            } catch (RuntimeException error) { nativeCollapse(false); }
             return START_NOT_STICKY;
+        }
+        // Old PendingIntents must never resurrect a stopped monitoring session.
+        if (intent.getAction() != null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         rootMode = nativeRootMode();
         if (!rootMode && !Settings.canDrawOverlays(this)) {
             stopSelf();
             return START_NOT_STICKY;
         }
         try {
-            NotificationManager notifications = getSystemService(NotificationManager.class);
-            notifications.createNotificationChannel(new NotificationChannel(
-                "performance_hud", "Performance HUD", NotificationManager.IMPORTANCE_LOW));
-            PendingIntent open =
-                PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
-                                          PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            PendingIntent stop =
-                PendingIntent.getService(this, 1, new Intent(this, HudService.class).setAction(STOP),
-                                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            Notification notification =
-                new Notification.Builder(this, "performance_hud")
-                    .setSmallIcon(getApplicationInfo().icon)
-                    .setContentTitle("VulkanScope performance HUD")
-                    .setContentText("Tap to configure; Stop ends native monitoring")
-                    .setContentIntent(open)
-                    .setOngoing(true)
-                    .addAction(new Notification.Action.Builder(null, "Stop", stop).build())
-                    .build();
-            startForeground(3001, notification);
+            startForeground(HudNotification.ID, notification());
             nativeStart(getApplicationContext(), getFilesDir().getAbsolutePath(), rootMode);
             started = true;
             if (rootMode) {
                 rootBroker = new RootDisplayBroker(new RootDisplayBroker.Host() {
                     @Override public boolean running() { return nativeRunning(); }
                     @Override public int[] geometry(int width, int height, float density) {
-                        return nativeGeometry(width, height, density);
+                        int[] geometry = nativeGeometry(width, height, density);
+                        return new int[]{geometry[0], geometry[1], geometry[2], nativeCollapsed() ? 0 : 1};
                     }
                     @Override public void surface(Surface surface, float density) { nativeSurface(surface, density); }
                 });
@@ -191,6 +211,14 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     /** Reads native display preference and root availability without a shell call. */
     public static boolean usesRootDisplay() { return nativeRootMode(); }
     private static native boolean nativeRootMode();
+    /** Reads the native preference without sampling; called on the service main thread. */
+    private static native boolean nativeLiveUpdates();
+    /** Sets transient native visibility without stopping collection or disposing the Surface. */
+    private static native void nativeCollapse(boolean collapsed);
+    /** Reads native visibility; also safe from the serialized root Binder callback. */
+    private static native boolean nativeCollapsed();
+    /** Returns bounded, formatted native snapshot text for the system notification. */
+    private static native String nativeLiveText();
     /** Starts a cancellable native-owned root SurfaceControl process off the main thread. */
     private static native void nativeRootStart(String apk, String providerUri, String token);
 

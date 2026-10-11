@@ -17,7 +17,7 @@ public class RootDisplayBrokerTest {
         int releases;
         boolean running = true;
         public boolean running() { return running; }
-        public int[] geometry(int width, int height, float density) { return new int[]{320, 180, 51}; }
+        public int[] geometry(int width, int height, float density) { return new int[]{320, 180, 51, 1}; }
         public void surface(Surface surface, float density) { if (surface == null) releases++; }
     }
     @After public void resetIdentity() { ShadowBinder.reset(); }
@@ -31,6 +31,8 @@ public class RootDisplayBrokerTest {
         assertNotNull(builder.getMethod("setBufferSize", int.class, int.class));
         assertNotNull(transaction.getMethod("setLayerStack", control, int.class));
         assertNotNull(transaction.getMethod("remove", control));
+        assertNotNull(transaction.getMethod("hide", control));
+        assertNotNull(transaction.getMethod("show", control));
         assertNotNull(Surface.class.getConstructor());
         assertNotNull(Surface.class.getMethod("copyFrom", control));
         assertNotNull(Class.forName("android.app.IActivityManager").getMethod("getContentProviderExternal", String.class, int.class, android.os.IBinder.class, String.class));
@@ -69,7 +71,7 @@ public class RootDisplayBrokerTest {
         broker.connect(broker.token);
         Parcel reply = state(broker, 1920, 3.5f);
         assertEquals(1, reply.readInt());
-        assertArrayEquals(new int[]{320, 180, 51}, reply.createIntArray());
+        assertArrayEquals(new int[]{320, 180, 51, 1}, reply.createIntArray());
         reply.recycle();
         broker.close();
         assertEquals(1, host.releases);

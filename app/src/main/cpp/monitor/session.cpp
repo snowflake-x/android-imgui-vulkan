@@ -111,6 +111,7 @@ void Session::start(bool rootDisplay) {
         failed_ = false;
         hud_ = {};
     }
+    collapsed_ = false;
     rootDisplay_ = rootDisplay;
     cancel_ = false;
     setError("Starting native performance capture...");
@@ -124,6 +125,7 @@ void Session::stop() {
         worker_.join();
     std::lock_guard<std::mutex> lock(mutex_);
     rootDisplay_ = false;
+    collapsed_ = false;
     if (!failed_)
         report_ = "Performance HUD stopped";
 }

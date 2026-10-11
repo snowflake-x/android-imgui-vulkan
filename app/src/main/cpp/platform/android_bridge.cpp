@@ -529,6 +529,36 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSto
 extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeRunning(JNIEnv *, jclass) {
     return monitor::NativeSession().running();
 }
+/** @brief 非阻塞读取原生设置，Android 桥接据此提供通知操作。 */
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeLiveUpdates(JNIEnv *, jclass) {
+    return monitor::NativeSession().config().liveUpdates;
+}
+/** @brief 仅控制显示，保留采集线程与当前会话。 */
+extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeCollapse(JNIEnv *, jclass, jboolean value) {
+    monitor::NativeSession().collapse(value);
+}
+/** @brief Root Binder 与服务主线程均可读取原子显示状态。 */
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeCollapsed(JNIEnv *, jclass) {
+    return monitor::NativeSession().collapsed();
+}
+/** @brief 通知数据来自与 ImGui 相同的有时效限制的原生快照，不在 Java 重复采集。 */
+extern "C" JNIEXPORT jstring JNICALL Java_dev_snowflake_vulkan_HudService_nativeLiveText(JNIEnv *e, jclass) {
+    const auto c = monitor::NativeSession().config();
+    const auto h = monitor::NativeSession().hud();
+    auto number = [](const std::optional<double> &value, int digits) {
+        return value ? monitor::Format(*value, digits) : std::string("--");
+    };
+    const auto shortText = h.capturedNs > 0 && h.status.rfind("Last sample:", 0) != 0
+        ? number(h.fps.current, 0) + " FPS" : std::string("-- FPS");
+    const auto target = h.values.find("foreground");
+    const auto app = target == h.values.end() ? std::string{} : target->second.substr(0, 256);
+    const auto body = app + "\nFPS: " + number(h.fps.current, 1) + " | Pre: " + number(h.present.current, 2) +
+        " ms\nGPU: " + number(h.gpu.current, 2) + " " + h.gpuUnit + " | Mem (RSS): " + number(h.processMb, 1) +
+        " MB\nGPU Mem: " + number(h.gpuMb, 1) + " MB\n" + h.status.substr(0, 512);
+    const auto json = "{\"language\":" + JsonString(c.language) + ",\"short\":" + JsonString(shortText) +
+        ",\"body\":" + JsonString(body) + "}";
+    return e->NewStringUTF(json.c_str());
+}
 extern "C" JNIEXPORT jintArray JNICALL Java_dev_snowflake_vulkan_HudService_nativeGeometry(JNIEnv *e, jclass,
                                                                                            jint width,
                                                                                            jint height,
@@ -562,8 +592,8 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeSur
             while (!overlayCancel) {
                 auto config = monitor::NativeSession().config();
                 auto snapshot = monitor::NativeSession().hud();
-                bool visible = monitor::NativeSession().interactive();
-                {
+                bool visible = monitor::NativeSession().interactive() && !monitor::NativeSession().collapsed();
+                if (!monitor::NativeSession().collapsed()) {
                     std::lock_guard<std::mutex> lock(ImGuiMutex());
                     renderer.render([&] {
                         if (!visible)

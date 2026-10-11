@@ -37,6 +37,9 @@ class Session {
     void start(bool rootDisplay = false);
     /** @brief 当前会话的显示后端；配置切换只影响下次启动，不改变运行中的权限判断。 */
     bool rootDisplayActive() const { return rootDisplay_; }
+    /** @brief 收起仅改变显示状态；服务在确认通知恢复入口可用后调用。 */
+    void collapse(bool value) { collapsed_ = value; }
+    bool collapsed() const { return collapsed_; }
     void stop();
     void setError(const std::string &error);
     void fail(const std::string &error);
@@ -53,7 +56,7 @@ class Session {
     void beginRootRequest(bool diagnostics);
     mutable std::mutex mutex_;
     std::mutex lifecycle_;
-    std::atomic<bool> rootDisplay_{false};
+    std::atomic<bool> rootDisplay_{false}, collapsed_{false};
     std::mutex rootLifecycle_;
     std::condition_variable wake_;
     std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_;
