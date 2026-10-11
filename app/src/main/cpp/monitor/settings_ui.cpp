@@ -153,20 +153,12 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     }
     ImGui::TextWrapped("%s", Text(language, "Graphics tracing samples calls for 200 ms. Requires root and kernel uprobes; adds tracing overhead."));
     if (ImGui::Button(Label(language, "Game fields").c_str())) {
-        for (auto &item : config.enabled)
-            item.second = false;
-        for (const char *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source",
-                               "engine_resolution", "engine_source", "battery_temp"})
-            config.enabled[id] = true;
+        ApplyMetricPreset(config, MetricPreset::Game);
         changed = true;
     }
     ui::SameLineIfFits(Text(language, "Hardware fields"));
     if (ImGui::Button(Label(language, "Hardware fields").c_str())) {
-        for (auto &item : config.enabled)
-            item.second = false;
-        for (const char *id : {"gpu_model", "cpu_freq", "cpu_load", "cpu_power", "gpu_freq", "gpu_load",
-                               "memory", "battery_power", "battery_temp", "thermal"})
-            config.enabled[id] = true;
+        ApplyMetricPreset(config, MetricPreset::Hardware);
         changed = true;
     }
     if (ImGui::Button(Label(language, "Restore defaults").c_str())) {

@@ -1,6 +1,7 @@
 #include "platform/overlay_renderer.h"
 #include "imgui_impl_vulkan.h"
 #include "monitor/model.h"
+#include "monitor/session.h"
 #include "platform/android_bridge.h"
 #include <algorithm>
 #include <stdexcept>
@@ -52,6 +53,12 @@ void OverlayRenderer::initialize(ANativeWindow *surfaceWindow, float scale) {
     if (!gpu)
         throw std::runtime_error("No Vulkan graphics/present queue available");
     vkGetPhysicalDeviceProperties(gpu, &properties);
+    monitor::NativeSession().gpu({
+        {"gpu_model", properties.deviceName},
+        {"gpu_driver", std::to_string(properties.driverVersion) + " (raw)"},
+        {"gpu_api", std::to_string(VK_VERSION_MAJOR(properties.apiVersion)) + "." +
+            std::to_string(VK_VERSION_MINOR(properties.apiVersion)) + "." +
+            std::to_string(VK_VERSION_PATCH(properties.apiVersion))}});
     float priority = 1.0f;
     VkDeviceQueueCreateInfo q{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     q.queueFamilyIndex = family;

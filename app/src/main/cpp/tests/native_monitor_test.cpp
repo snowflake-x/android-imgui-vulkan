@@ -125,6 +125,36 @@ void config() {
     require(!LoadConfig(path).root, "invalid config fails closed");
     std::remove(path.c_str());
 }
+void presets() {
+    const auto path = "/tmp/vulkanscope-preset-" + std::to_string(getpid());
+    std::string error;
+    Config config;
+    config.language = "zh-Hans";
+    config.hudGraph = false;
+    config.hudExtras = true;
+    config.surface = "SurfaceView[com.game.app]";
+    const auto originalOrder = config.order;
+    for (auto preset : {MetricPreset::Game, MetricPreset::Hardware}) {
+        config.root = preset == MetricPreset::Hardware;
+        ApplyMetricPreset(config, preset);
+        for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory"})
+            require(config.has(id), "field presets retain every classic HUD core value");
+        require(config.has("engine_resolution") == (preset == MetricPreset::Game) &&
+                    config.has("cpu_load") == (preset == MetricPreset::Hardware),
+                "presets replace their optional fields when switched");
+        require(config.root == (preset == MetricPreset::Hardware) && config.language == "zh-Hans" &&
+                    !config.hudGraph && config.hudExtras && config.surface == "SurfaceView[com.game.app]" &&
+                    config.order == originalOrder && !config.has("graphics_api"),
+                "presets preserve permissions and presentation without enabling call tracing");
+        for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory"})
+            config.enabled[id] = false;
+        require(SaveConfig(path, config, error), "save manual core field selection after preset");
+        const auto loaded = LoadConfig(path);
+        for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory"})
+            require(!loaded.has(id), "manual core field opt-out remains configurable and persists");
+    }
+    std::remove(path.c_str());
+}
 void processes() {
     std::atomic<bool> cancelled{false};
     auto r = RunCommand({"sh", "-c", "printf hello"}, cancelled, 1000);
@@ -237,6 +267,7 @@ int main() {
         units();
         engine();
         config();
+        presets();
         processes();
         lifecycle();
         authorization();

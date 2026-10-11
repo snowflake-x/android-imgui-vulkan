@@ -26,6 +26,9 @@ struct Config {
     bool has(const std::string &id) const;
     void normalize();
 };
+enum class MetricPreset { Game, Hardware };
+/** @brief 应用字段预设并保留经典 HUD 核心字段；不改变权限和独立显示设置。 */
+void ApplyMetricPreset(Config &config, MetricPreset preset);
 /** @brief 原子保存私有配置；失败返回错误，不覆盖已有文件。 */
 bool SaveConfig(const std::string &path, Config config, std::string &error);
 Config LoadConfig(const std::string &path);

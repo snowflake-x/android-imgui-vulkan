@@ -51,6 +51,21 @@ bool Config::has(const std::string &id) const {
     auto it = enabled.find(id);
     return it != enabled.end() && it->second;
 }
+void ApplyMetricPreset(Config &config, MetricPreset preset) {
+    for (auto &item : config.enabled)
+        item.second = false;
+    for (const char *id : {"gpu_model", "fps", "frame_time", "app_memory"})
+        config.enabled[id] = true;
+    if (preset == MetricPreset::Game) {
+        for (const char *id : {"foreground", "frame_p95", "fps_source", "engine_resolution",
+                               "engine_source", "battery_temp"})
+            config.enabled[id] = true;
+    } else {
+        for (const char *id : {"cpu_freq", "cpu_load", "cpu_power", "gpu_freq", "gpu_load", "memory",
+                               "battery_power", "battery_temp", "thermal"})
+            config.enabled[id] = true;
+    }
+}
 void Config::normalize() {
     if (language != "system" && language != "en" && language != "zh-Hans") language = "system";
     if (interval != 500 && interval != 1000 && interval != 2000)
