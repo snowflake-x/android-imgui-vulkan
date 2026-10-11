@@ -81,6 +81,42 @@ HudSnapshot HudHistory::update(const Values &values, const FrameSample &frames, 
         result.status.clear();
     return result;
 }
+std::string GraphicsApiCaption(const Config &config, const HudSnapshot &snapshot) {
+    if (!config.has("graphics_api"))
+        return "API: OFF";
+    if (!config.root)
+        return "API: root OFF";
+    auto get = [&](const char *id) {
+        const auto value = snapshot.values.find(id);
+        return value == snapshot.values.end() ? std::string{} : value->second;
+    };
+    const auto status = get("graphics_api_status");
+    const std::pair<const char *, const char *> captions[] = {
+        {"disabled", "API: OFF"},
+        {"root_disabled", "API: root OFF"},
+        {"root_unavailable", "API: root blocked"},
+        {"waiting", "API: waiting"},
+        {"target_unavailable", "API: no target"},
+        {"symbols_unavailable", "API: no symbols"},
+        {"trace_unavailable", "API: trace blocked"},
+        {"probe_failed", "API: probe failed"},
+        {"capture_failed", "API: capture failed"},
+        {"no_calls", "API: no calls"},
+        {"cleanup_failed", "API: cleanup failed"},
+        {"cancelled", "API: cancelled"},
+    };
+    for (const auto &caption : captions)
+        if (status == caption.first)
+            return caption.second;
+    if (!status.empty() && status != "observed")
+        return "API: unavailable";
+    auto api = get("graphics_api");
+    if (api.empty())
+        return status.empty() ? "API: waiting" : "API: unavailable";
+    api = api.substr(0, api.find(" ("));
+    return api == "Vulkan" || api == "OpenGL ES" || api == "OpenGL ES + Vulkan"
+               ? api : "API: unavailable";
+}
 std::array<std::string, 3> HudCaptions(const Config &config, const HudSnapshot &snapshot) {
     const auto foreground = snapshot.values.find("foreground");
     const auto target = foreground == snapshot.values.end() || foreground->second.rfind("N/A", 0) == 0

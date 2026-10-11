@@ -95,9 +95,11 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 
 ## 前台图形 API 调用跟踪
 
-在 ImGui 配置中启用 **Graphics API (root call tracing) / 图形 API（root 调用跟踪）**，并显式启用 root 采集。该字段默认关闭，保存在现有原生配置中。启用后 Classic HUD 的第二行显示本次观察到的 API；主页报告及诊断提供完整状态。原有 `GPU API` 字段仍是悬浮窗自身 Vulkan 设备能力，不代表目标应用。
+在 ImGui 配置的 Root 选项附近启用 **Graphics API (root call tracing) / 图形 API（root 调用跟踪）**，并显式启用 root 采集。这是独立开关，默认和字段预设均关闭；仅授权 Root 不会开启探针。启用后 Classic HUD 的第二行显示本次观察到的 API；关闭、等待、权限失败、符号不可用和未捕获调用分别显示状态。主页报告及诊断提供完整原因。`Device Vulkan API version / 设备 Vulkan API 版本`（配置键仍为 `gpu_api`）是监控程序查询到的 Vulkan 设备能力，不代表目标应用当前使用的 API 或版本。
 
-实现位于 `monitor/graphics_trace.*`，由现有性能 HUD 插件的 Collector 工作线程调用，不增加 Java/Kotlin 功能层。每轮通过包名和 Android user 查找前台应用的主进程，读取其映射，核对本地库文件的设备号与 inode，从 ELF32/ELF64 动态符号及可执行 PT_LOAD 段计算文件偏移。库的存在本身不会被作为 API 检测结果。
+实现位于 `monitor/graphics_trace.*`，由现有性能 HUD 插件的 Collector 工作线程调用，不增加 Java/Kotlin 功能层。每轮通过包名和 Android user 查找前台应用的主进程，先筛选 EGL/Vulkan 可执行映射再有界读取，避免大型游戏的无关映射占满输出上限，从 ELF32/ELF64 动态符号及可执行 PT_LOAD 段计算文件偏移。优先核对本地库文件的设备号与 inode；本地不可读或文件与映射不一致时，通过 Root 有界读取 `/proc/<pid>/root/<映射路径>`（单个库最多 16 MiB），在 C++ 内存中解析 ELF，并用对应路径设置探针。读取前后核对进程身份及文件设备号、inode，避免 Android 挂载命名空间不同导致读错库。库的存在本身不会被作为 API 检测结果。
+
+诊断中的 `graphics_api_status` 是稳定的阶段状态，`graphics_api_details` 保留有界的失败细节。`symbols_unavailable` 表示尚未找到可用探针符号，不能据此断言内核不支持；`trace_unavailable` 表示 tracefs 或实例不可用，`probe_failed` 表示注册/启用探针失败，`no_calls` 表示本轮完整采样未观察到调用。授权、目标进程、捕获和清理失败也各自保留状态。停止或采样过期时，悬浮窗不继续显示旧的 API 结论。
 
 使用 root 写入内核 tracefs uprobes，跟踪：
 
@@ -106,7 +108,7 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 
 每轮建立唯一事件组和独立 trace 实例，对目标进程当时存在的线程设置 `common_pid` 过滤，开启 200 ms 后停止。采样前后核对进程启动时间、UID 和 cmdline；仅在采样成功并读取到对应调用事件时报告 GLES、Vulkan 或两者。没有事件时显示未知，不保留上一进程的结论，也不推断应用未使用 GPU。跟踪会增加开销，采集周期还包含 setup/cleanup 时间，不能将此模式视为零开销性能测量。
 
-停止、超时或失败时，shell trap 清理本轮事件；root shell 内部另有两秒超时，防止 su 服务脱离应用进程组后继续采样；C++ 另执行一次不受采集取消标志影响、最长五秒的清理。失败后先等待内部时限结束再清理，正常采样无此等待。只操作本次创建的实例和事件，不清空全局 trace、不改变 SELinux 策略。若清理失败，显示错误并停止本次 Collector 生命周期中的后续跟踪，建议重启设备后重试。系统强制终止、内核错误或 root 服务异常仍可能导致残留，不能保证此类情况下成功清理。
+停止、超时或失败时，shell trap 清理本轮事件；root shell 内部另有两秒超时，防止 su 服务脱离应用进程组后继续采样；C++ 另执行一次不受采集取消标志影响、最长五秒的清理。失败后先等待内部时限结束再清理，正常采样无此等待。只操作本次创建的实例和事件，不清空全局 trace、不改变 SELinux 策略。若清理失败，显示错误并停止当前宿主会话中的后续跟踪，HUD 停止/启动和 Root 开关不能清除此状态，建议重启设备后重试。系统强制终止、内核错误或 root 服务异常仍可能导致残留，不能保证此类情况下成功清理。
 
 ### 支持边界
 
@@ -114,4 +116,4 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 - 只跟踪可读取、具有动态函数符号的目标进程 `libEGL.so`、`libvulkan.so`；内核或符号不支持时显示不可用。APK 内映射、自定义图形库、其他进程负责渲染的应用尚不覆盖。
 - Vulkan 通过 `vkGetDeviceProcAddr` 直接取得驱动函数地址时可能绕过 loader 探针；EGL 扩展地址同样可能绕过导出函数。200 ms 内没有调用、采样后创建的新线程、缓冲区截断都可能漏检。检测结果表示“本次观察到”，不能证明列出了全部 API。
 - DX11/DX12 经兼容层转换时这里只能观察底层 EGL/Vulkan；不宣称识别上层 DirectX 版本或 Vulkan/GLES API 版本。
-- 宿主测试覆盖真实 ELF 动态符号、损坏文件、事件判定、独立实例脚本、身份检查和取消/失败后的清理。Android 双 ABI 编译不能代替设备内核验证；必须在支持 uprobes 的 root 设备上验证 EGL/Vulkan 应用、混合应用、切前台和停止采集。
+- 宿主测试覆盖真实 ELF 动态符号、Root 文件读取回退、损坏文件、事件判定、阶段状态、独立实例脚本、身份检查和取消/失败后的清理。Android 双 ABI 编译不能代替设备内核验证；必须在支持 uprobes 的 root 设备上验证 EGL/Vulkan 应用、混合应用、切前台和停止采集。

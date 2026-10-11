@@ -54,6 +54,8 @@ class Session {
     bool initialized_ = false, interactive_ = true, failed_ = false;
     /** @brief 仅采样线程访问；后续线程在旧线程 join 后继承，HUD 启停不清除此状态。 */
     bool gpuTimingBlocked_ = false;
+    /** @brief 与 GPU 计时相同，仅采样线程访问并在 join 后继承清理失败状态。 */
+    bool graphicsTracingBlocked_ = false;
     std::atomic<bool> rootBusy_{false}, systemCancel_{true};
     std::thread systemWorker_;
     std::thread worker_, rootWorker_;

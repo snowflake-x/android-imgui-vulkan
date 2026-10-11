@@ -209,10 +209,20 @@ static std::string ForegroundQueryStatus(const CommandResult &result, bool found
 }
 void Collector::foreground(const Config &c, Values &v) {
     latestFrames_ = {};
+    v["graphics_api"] = c.has("graphics_api") ? "N/A (capture cancelled)" : "OFF";
+    v["graphics_api_status"] = c.has("graphics_api") ? "cancelled" : "disabled";
+    v["graphics_api_details"] = c.has("graphics_api") ? "Capture cancelled before tracing"
+                                                     : "Enable Graphics API (root call tracing) separately";
     auto unavailable = [&](const std::string &why) {
-        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface", "graphics_api",
+        for (const auto *id : {"foreground", "fps", "frame_time", "frame_p95", "fps_source", "surface",
                                "app_memory", "gpu_time", "gpu_memory"})
             v[id] = "N/A (" + why + ")";
+        if (c.has("graphics_api")) {
+            v["graphics_api"] = "N/A (" + why + ")";
+            v["graphics_api_status"] = !c.root ? "root_disabled"
+                                       : !authorized_ ? "root_unavailable" : "target_unavailable";
+            v["graphics_api_details"] = why;
+        }
         frames_.reset();
         surfaceIdentity_.clear();
         selectedSurface_.clear();
@@ -245,10 +255,14 @@ void Collector::foreground(const Config &c, Values &v) {
     v["foreground"] = foreground->package;
     v["foreground_user"] = std::to_string(foreground->user);
     if (c.has("graphics_api") && !cancel_) {
-        v["graphics_api"] = traceCleanupFailed_
-            ? "N/A (trace cleanup failed; restart device before retrying)"
-            : TraceGraphics(foreground->package, foreground->user, cancel_, runner_);
-        traceCleanupFailed_ = v["graphics_api"].find("trace cleanup failed") != std::string::npos;
+        if (traceCleanupFailed_) {
+            v["graphics_api"] = "N/A (trace cleanup failed; restart device before retrying)";
+            v["graphics_api_status"] = "cleanup_failed";
+            v["graphics_api_details"] = "Previous trace cleanup failed; restart device before retrying";
+        } else {
+            v["graphics_api"] = TraceGraphics(foreground->package, foreground->user, cancel_, runner_, &v);
+            traceCleanupFailed_ = v["graphics_api_status"] == "cleanup_failed";
+        }
     }
     if (c.has("app_memory")) {
         v["app_memory"] = "N/A (process RSS unavailable)";

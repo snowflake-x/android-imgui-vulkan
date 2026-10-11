@@ -57,10 +57,7 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     if (hz.empty())
         hz = "-- Hz";
     hz.erase(std::remove(hz.begin(), hz.end(), ' '), hz.end());
-    auto api = config.has("graphics_api") ? value(s, "graphics_api") : std::string{};
-    if (api.empty()) api = "SurfaceFlinger";
-    else if (api.rfind("N/A", 0) == 0) api = "API: --";
-    else api = api.substr(0, api.find(" ("));
+    const auto api = GraphicsApiCaption(config, s);
     text(left, y, fit(api, right - width(hz) - left - f), white);
     text(right - width(hz), y, hz, white);
     y += line;

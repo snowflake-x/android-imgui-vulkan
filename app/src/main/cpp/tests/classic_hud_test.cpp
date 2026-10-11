@@ -11,6 +11,65 @@ void require(bool value, const char *message = "Classic HUD regression") {
     if (!value)
         throw std::runtime_error(message);
 }
+/** @brief 区分图形调用证据、关闭及各失败阶段，不能将设备能力、呈现来源或旧结果误当成活跃 API。 */
+void graphicsApiCaptions() {
+    Config config;
+    HudSnapshot sample;
+    sample.values["gpu_api"] = "1.3.284";
+    sample.values["fps_source"] = "SurfaceFlinger actual-present";
+    config.root = true;
+    require(GraphicsApiCaption(config, sample) == "API: OFF", "root does not enable API tracing");
+    config.enabled["graphics_api"] = true;
+    require(GraphicsApiCaption(config, sample) == "API: waiting", "device capability is not active API evidence");
+    for (const auto *observed : {"OpenGL ES (EGL swap observed)", "Vulkan (calls observed)",
+                               "OpenGL ES + Vulkan (calls observed)"}) {
+        sample.values["graphics_api"] = observed;
+        for (const char *status : {"", "observed"}) {
+            sample.values["graphics_api_status"] = status;
+            const std::string expected(observed);
+            require(GraphicsApiCaption(config, sample) == expected.substr(0, expected.find(" (")),
+                    "confirmed and legacy API evidence keeps the API name");
+        }
+    }
+    sample.values["graphics_api"] = "Vulkan (calls observed)";
+    const std::pair<const char *, const char *> statuses[] = {
+        {"disabled", "API: OFF"},
+        {"root_disabled", "API: root OFF"},
+        {"root_unavailable", "API: root blocked"},
+        {"waiting", "API: waiting"},
+        {"target_unavailable", "API: no target"},
+        {"symbols_unavailable", "API: no symbols"},
+        {"trace_unavailable", "API: trace blocked"},
+        {"probe_failed", "API: probe failed"},
+        {"capture_failed", "API: capture failed"},
+        {"no_calls", "API: no calls"},
+        {"cleanup_failed", "API: cleanup failed"},
+        {"cancelled", "API: cancelled"},
+        {"unknown_future_status", "API: unavailable"},
+    };
+    for (const auto &status : statuses) {
+        sample.values["graphics_api_status"] = status.first;
+        const auto caption = GraphicsApiCaption(config, sample);
+        require(caption == status.second && caption.size() <= 20,
+                "each failure stage fits the HUD and overrides stale observed calls");
+    }
+    sample.values.erase("graphics_api_status");
+    sample.values["graphics_api"] = "N/A (no accessible EGL/Vulkan probe symbols)";
+    require(GraphicsApiCaption(config, sample) == "API: unavailable", "legacy N/A never becomes an API name");
+    sample.values["graphics_api"] = "SurfaceFlinger";
+    require(GraphicsApiCaption(config, sample) == "API: unavailable", "presentation source is not an API");
+    sample.values["graphics_api"] = "Vulkan (calls observed)";
+    sample.values["graphics_api_status"] = "observed";
+    config.root = false;
+    require(GraphicsApiCaption(config, sample) == "API: root OFF", "disabling root hides earlier calls");
+    config.enabled["graphics_api"] = false;
+    require(GraphicsApiCaption(config, sample) == "API: OFF", "disabling the field hides earlier calls");
+    for (auto preset : {MetricPreset::Game, MetricPreset::Hardware}) {
+        config.enabled["graphics_api"] = true;
+        ApplyMetricPreset(config, preset);
+        require(!config.has("graphics_api"), "field presets keep tracing off");
+    }
+}
 /** @brief 驱动窗口与命令批次不能冒充帧历史，GPU 指标也不能依赖 SurfaceFlinger 成功。 */
 void gpuMetrics() {
     Config config;
@@ -93,6 +152,7 @@ void gpuMetrics() {
 }
 }
 int main(int argc, char **argv) {
+    graphicsApiCaptions();
     gpuMetrics();
     HudHistory history;
     Values values{{"foreground", "game"}, {"foreground_user", "0"}, {"surface", "layer"}};

@@ -43,6 +43,9 @@ HudSnapshot Session::hud() const {
         result = {};
         result.values = hud_.values;
         result.status = cancel_ ? "Capture stopped" : "Waiting for a fresh sample";
+        result.values["graphics_api"] = "N/A (" + result.status + ")";
+        result.values["graphics_api_status"] = cancel_ ? "cancelled" : "waiting";
+        result.values["graphics_api_details"] = result.status;
     }
     result.values.insert(gpu_.begin(), gpu_.end());
     return result;
@@ -170,7 +173,7 @@ void Session::requestRoot() {
     });
 }
 void Session::collect() {
-    Collector collector(cancel_, {}, gpuTimingBlocked_);
+    Collector collector(cancel_, {}, gpuTimingBlocked_, graphicsTracingBlocked_);
     HudHistory history;
     while (!cancel_) {
         const auto c = config();
@@ -192,6 +195,7 @@ void Session::collect() {
             } else {
                 auto values = collector.sample(c);
                 gpuTimingBlocked_ = collector.gpuTimingBlocked();
+                graphicsTracingBlocked_ = collector.graphicsTracingBlocked();
                 if (cancel_)
                     break;
                 for (auto &item : platform.values)
@@ -217,6 +221,7 @@ void Session::collect() {
             }
         } catch (const std::exception &e) {
             gpuTimingBlocked_ = collector.gpuTimingBlocked();
+            graphicsTracingBlocked_ = collector.graphicsTracingBlocked();
             history.reset();
             collector.reset();
             setError(std::string("Native sampling error: ") + e.what());

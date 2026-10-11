@@ -32,6 +32,8 @@ struct HudSize {
     float width, height, fontSize;
 };
 HudSize MeasureHud(const Config &config, float fontSize, float maxWidth, float maxHeight);
+/** @brief 将实际图形调用及跟踪失败阶段显示为短标题，不将呈现来源或设备能力当作应用 API。 */
+std::string GraphicsApiCaption(const Config &config, const HudSnapshot &snapshot);
 /** @brief 分别展示本次目标、呈现采样状态和 GPU 指标能力，避免缺失原因互相覆盖。 */
 std::array<std::string, 3> HudCaptions(const Config &config, const HudSnapshot &snapshot);
 }

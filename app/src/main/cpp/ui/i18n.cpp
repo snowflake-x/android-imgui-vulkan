@@ -11,7 +11,8 @@ struct Entry {
 constexpr Entry entries[] = {
     {"Foreground", "前台应用"},
     {"Graphics API (root call tracing)", "图形 API（root 调用跟踪）"},
-    {"Graphics tracing samples calls for 200 ms. Requires root and kernel uprobes; adds tracing overhead.", "图形跟踪采样 200 毫秒的实际调用，需要 root 和内核 uprobes 支持，会增加跟踪开销。"},
+    {"Graphics API tracing has a separate switch, off by default and in field presets. Requires root and kernel uprobes support; each capture samples calls for 200 ms and adds tracing overhead. The device Vulkan API version describes support, not the game's active API.",
+     "图形 API 跟踪需要单独开启，默认及字段预设均关闭。需要 Root 和内核 uprobes 支持；每次采样 200 毫秒的实际调用，会增加跟踪开销。设备 Vulkan API 版本表示设备支持的版本，并非游戏当前使用的 API。"},
     {"Foreground FPS", "前台帧率"},
     {"P95 frame time", "P95 帧时间"},
     {"System RAM", "系统内存"},
@@ -143,7 +144,7 @@ constexpr Entry entries[] = {
     {"Process memory (RSS)", "进程内存（RSS）"},
     {"GPU shared memory (KGSL)", "GPU 共享显存（KGSL）"},
     {"GPU driver", "GPU 驱动"},
-    {"GPU API", "GPU API"},
+    {"Device Vulkan API version", "设备 Vulkan API 版本"},
     {"CPU clock", "CPU 时钟"},
     {"CPU load", "CPU 使用率"},
     {"CPU power", "CPU 功耗"},

@@ -26,7 +26,7 @@ const std::vector<Metric> &Metrics() {
                                               {"app_memory", "Process memory (RSS)", true},
                                               {"gpu_memory", "GPU shared memory (KGSL)", true},
                                               {"gpu_driver", "GPU driver", false},
-                                              {"gpu_api", "GPU API", false},
+                                              {"gpu_api", "Device Vulkan API version", false},
                                               {"cpu_freq", "CPU clock", true},
                                               {"cpu_load", "CPU load", false},
                                               {"cpu_power", "CPU power", false},

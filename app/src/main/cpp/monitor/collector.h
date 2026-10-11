@@ -9,13 +9,17 @@ std::string ReadFile(const std::string &path, std::size_t limit = 32768);
 class Collector {
   public:
     using CommandRunner = std::function<CommandResult(const std::string &, int)>;
-    explicit Collector(const std::atomic<bool> &cancel, CommandRunner runner = {}, bool gpuTimingBlocked = false)
-        : cancel_(cancel), runner_(std::move(runner)), gpuTimingCleanupFailed_(gpuTimingBlocked) {}
+    explicit Collector(const std::atomic<bool> &cancel, CommandRunner runner = {}, bool gpuTimingBlocked = false,
+                       bool graphicsTracingBlocked = false)
+        : cancel_(cancel), runner_(std::move(runner)), traceCleanupFailed_(graphicsTracingBlocked),
+          gpuTimingCleanupFailed_(gpuTimingBlocked) {}
     Values sample(const Config &config);
     void reset();
     const FrameSample &frameSample() const { return latestFrames_; }
     /** @brief 宿主跨 HUD 启停保留清理失败状态，禁止遗留实例尚未处理时继续创建跟踪。 */
     bool gpuTimingBlocked() const { return gpuTimingCleanupFailed_; }
+    /** @brief 图形 API 探针清理失败后，跨 HUD 启停禁止继续创建探针。 */
+    bool graphicsTracingBlocked() const { return traceCleanupFailed_; }
 
   private:
     CommandResult root(const std::string &script, int timeout = 2000, std::size_t limit = 32768);

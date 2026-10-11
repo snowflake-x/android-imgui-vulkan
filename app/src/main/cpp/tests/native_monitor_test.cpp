@@ -321,6 +321,60 @@ void authorization() {
     collector.sample(config);
     require(calls == 2, "explicit opt-in change permits retry");
 }
+void graphicsAuthorization() {
+    std::atomic<bool> cancelled{false};
+    bool rootGranted = true, targetAvailable = true;
+    int processQueries = 0;
+    const Collector::CommandRunner runner = [&](const std::string &script, int) {
+        if (script == "id -u") return CommandResult{rootGranted, rootGranted ? "0\n" : "", "denied"};
+        if (script.find("dumpsys activity activities") != std::string::npos)
+            return CommandResult{true, targetAvailable
+                ? "topResumedActivity=ActivityRecord{cd u0 com.game.app/.Play}" : "", ""};
+        if (script.find("dumpsys window windows") != std::string::npos) return CommandResult{true, "", ""};
+        if (script.find("pidof ") != std::string::npos) {
+            ++processQueries;
+            return CommandResult{false, "", "process exited"};
+        }
+        throw std::runtime_error("unexpected graphics collection command");
+    };
+    Config config;
+    for (auto &field : config.enabled) field.second = false;
+    config.root = true;
+    Collector collector(cancelled, runner);
+    auto values = collector.sample(config);
+    require(values["root_status"] == "granted" && values["graphics_api_status"] == "disabled" &&
+                values["graphics_api"] == "OFF" && processQueries == 0,
+            "root authorization does not implicitly enable graphics tracing");
+    config.enabled["graphics_api"] = true;
+    values = collector.sample(config);
+    require(values["graphics_api_status"] == "target_unavailable" && processQueries == 1 &&
+                !values["graphics_api_details"].empty(),
+            "graphics process discovery propagates the precise trace failure");
+    targetAvailable = false;
+    values = collector.sample(config);
+    require(values["graphics_api_status"] == "target_unavailable" && processQueries == 1,
+            "missing foreground prevents probing and explains the target failure");
+    config.root = false;
+    values = collector.sample(config);
+    require(values["graphics_api_status"] == "root_disabled", "enabled tracing requires root opt-in");
+    rootGranted = false;
+    config.root = true;
+    values = collector.sample(config);
+    require(values["graphics_api_status"] == "root_unavailable", "denied root is distinct from missing symbols");
+    rootGranted = targetAvailable = true;
+    Collector blocked(cancelled, runner, false, true);
+    values = blocked.sample(config);
+    require(values["graphics_api_status"] == "cleanup_failed" && blocked.graphicsTracingBlocked() &&
+                processQueries == 1,
+            "a collector restarted after failed cleanup must not create more probes");
+    blocked.reset();
+    config.root = false;
+    blocked.sample(config);
+    config.root = true;
+    values = blocked.sample(config);
+    require(values["graphics_api_status"] == "cleanup_failed" && blocked.graphicsTracingBlocked() &&
+                processQueries == 1, "reset and root toggles cannot clear the cleanup failure latch");
+}
 void systemSnapshots() {
     Session session;
     session.initialize("/tmp/vulkanscope-system-" + std::to_string(getpid()), [] {
@@ -353,6 +407,8 @@ void lifecycle() {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     session.stop();
     require(calls == 1 && !session.running(), "single worker, interruptible sleep and stop");
+    require(session.hud().values.at("graphics_api_status") == "cancelled",
+            "a stopped HUD cannot display an earlier graphics API as current");
     auto before = calls.load();
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     require(calls == before, "no publication after joined stop");
@@ -375,6 +431,7 @@ int main() {
         processes();
         lifecycle();
         authorization();
+        graphicsAuthorization();
         processMemory();
         foregroundQueries();
         systemSnapshots();
