@@ -415,9 +415,18 @@ MemoryExecutor memoryExecutor() {
     if (!info || exception(e)) return {};
     auto type = e->GetObjectClass(info);
     auto apkObject = static_cast<jstring>(e->GetObjectField(info, e->GetFieldID(type, "sourceDir", "Ljava/lang/String;")));
-    auto libObject = static_cast<jstring>(e->GetObjectField(info, e->GetFieldID(type, "nativeLibraryDir", "Ljava/lang/String;")));
-    const auto apk = utf(e, apkObject), library = utf(e, libObject) + "/libvulkanscope.so";
+    const auto apk = utf(e, apkObject);
     if (exception(e) || apk.empty()) return {};
+    /** @brief Unextracted libraries live at APK!/lib/ABI paths, including ABI split APKs.
+     * Resolve through Android's loader instead of assuming nativeLibraryDir contains a file. */
+    auto loader = e->CallObjectMethod(context, method(e, context, "getClassLoader", "()Ljava/lang/ClassLoader;"));
+    if (exception(e) || !loader) return {};
+    auto findLibrary = method(e, loader, "findLibrary", "(Ljava/lang/String;)Ljava/lang/String;");
+    if (exception(e) || !findLibrary) return {};
+    auto libObject = static_cast<jstring>(e->CallObjectMethod(loader, findLibrary, e->NewStringUTF("vulkanscope")));
+    if (exception(e) || !libObject) return {};
+    const auto library = utf(e, libObject);
+    if (exception(e) || library.empty()) return {};
     return [apk, library](const MemoryJob &job, const std::atomic<bool> &cancel) {
         std::string encoded;
         constexpr char hex[] = "0123456789abcdef";

@@ -17,6 +17,8 @@
 
 每项任务在独立 Root app_process 工作进程内执行；C++ 使用只读 /proc/PID/maps 和 /proc/PID/mem。只列出普通应用 UID，排除系统和隔离 UID；不写入目标内存、不注入库、不调用目标进程函数。SELinux 或固件拒绝读取时明确报错。
 
+Root 启动所用原生库路径由应用 ClassLoader.findLibrary 解析，支持解压库和 APK（包括 ABI split）内的 `APK!/lib/ABI/libvulkanscope.so`。不能直接拼接 nativeLibraryDir：当前打包设置不解压原生库，该目录下可能没有实际文件。
+
 - 原生任务期限 15 秒；Root 桥接进程设 25 秒硬期限；宿主命令期限 30 秒。
 - 搜索读量最多 512 MiB，最多 1,024 个匹配；Unity 搜索最多检查 32 个元数据头候选。
 - 类型导出最多 10,000 行 / 480 KiB，结果通道上限 512 KiB。达到时间、读量、输出限制或存在不可读页时标记部分结果。部分搜索无匹配不等于目标中不存在。
