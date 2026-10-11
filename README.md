@@ -16,9 +16,9 @@
 
 每次 push、PR 或手动运行都会触发 **Actions → Build Android APK**。
 
-1. 打开成功的运行记录，在 **Artifacts** 下载 `VulkanScope-APKs-<编号>`。
-2. 解压，安装 **VulkanScope-debug.apk**（已用调试密钥签名，可直接安装）。
-3. `VulkanScope-release-unsigned.apk` 是供自行正式签名的发布包，不能直接安装。
+1. 打开成功的运行记录，在 **Artifacts** 按需单独下载 `VulkanScope-debug.apk` 或 `VulkanScope-release-unsigned.apk`。两个 APK 均以原文件上传，不额外打包为 ZIP，无须解压。
+2. 安装 **VulkanScope-debug.apk**（已用调试密钥签名，可直接安装）。
+3. `VulkanScope-release-unsigned.apk` 是供自行正式签名的发布包，不能直接安装。`SHA256SUMS.txt` 单独提供，供下载后校验。
 
 无须配置 secrets 即可自动产出 APK。推送 `v*` 标签后还会自动创建 GitHub Release，附 APK 和 SHA256。
 
