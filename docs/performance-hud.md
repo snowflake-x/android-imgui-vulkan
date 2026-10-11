@@ -1,62 +1,56 @@
-# 前台应用性能 HUD
+# 原生性能悬浮窗与配置
 
-`performance-hud` 使用现有 C++ 插件运行时，Android 平台采集由 Kotlin 前台服务承载。它适用于在启动王者荣耀、和平精英等应用后持续观察游戏 Surface 的实际呈现帧率。当前需要已有 `su` 提供者；没有集成 Shizuku。
+`performance-hud` 的悬浮窗、配置页和诊断页均由 **C++ + Dear ImGui + Vulkan** 绘制。C++ 负责配置持久化、采集调度、root 子进程、指标解析和系统信息读取。应用不再包含 Kotlin 插件或 Kotlin 业务代码。
 
-## 启动
+Android 仅保留 `MainActivity.java`、`HudService.java` 两个生命周期桥接：系统权限入口、前台通知、WindowManager 的 SurfaceView 容器以及 Surface 回调。没有 TextView 悬浮窗、Android 配置表单、Java 指标采集或 Java 配置逻辑。NDK 未提供的电池、显示、温控及剪贴板公共 API 由 C++ 直接通过 JNI 调用；JNIEnv 不跨线程保存。
 
-1. 打开 VulkanScope，在 **Foreground performance HUD → Configure** 进入设置。
-2. 授予悬浮窗权限；Android 13 及以上可授权通知，以便使用通知中的停止按钮。
-3. 勾选“允许只读 root 采样”，选择指标并保存，然后点击“启动 HUD”，在设备的 root 管理器中授权。
-4. 切到游戏。首次确定 Surface 后需要第二次采样建立 FPS；切换应用或 Surface 时重新建立基线。
-5. 从通知、设置或插件面板停止。关闭 Plugins 中的性能插件也会停止会话。熄屏暂停采样。
+## 使用
 
-root 默认关闭。拒绝、缺少 su 或授权超时会显示原因，不循环请求授权；停止后重新启动可重试。非 root 可访问的 GPU 元数据、内存、电池和显示信息仍可显示。悬浮窗不接收触摸，Android 12 及以上的窗口 alpha 限制为 0.8，配置项调整其背景填充透明度。
+1. 在 **Foreground performance HUD → Configure** 展开 ImGui 配置页，点击 **Grant overlay permission** 到系统页面授权。Android 13+ 可点 **Allow HUD notification** 授权通知。
+2. 选择字段、顺序、字号、背景透明度、四角位置和采样间隔。设置立即保存；可使用 Game/Hardware 字段预设。
+3. 如需前台 FPS 或引擎信息，显式勾选 **Enable read-only root sampling**。默认关闭；需要设备已安装的 `su` 提供者。
+4. 点击 **Start HUD** 后切换游戏。首次有效采样只建立基线，下一次开始统计。拒绝授权后不会循环弹窗，停止再启动可重试。
+5. 点击通知的 **Stop**、主面板的 **Stop HUD**，或关闭性能插件以停止。关闭主界面不会结束用户启动的悬浮窗会话。
 
-## 配置与指标
+悬浮窗不接收触摸，Android 窗口 alpha 限制为 0.8。ImGui 背景透明度独立可调；渲染使用支持预乘透明度或继承透明度的 Vulkan Surface。不支持透明合成时显示错误并结束会话，不生成假透明的黑色窗口。默认字体使用英文标签；长字段可在 ImGui 诊断页查看完整内容。
 
-字段可以独立选择、上下排序，提供精简/游戏/硬件预设。设置保存在应用私有 SharedPreferences，进程重启后保留。采样采用串行固定延迟：500 ms、1 秒或 2 秒为上一轮完成后的等待时间，实际周期还包括系统查询耗时。调整字号、背景透明度、四角位置后下一轮生效。
+高级设置提供 Surface 精确名称、CPU 功耗节点与瓦特换算系数。手机可使用 ImGui 触摸键盘或剪贴板粘贴，不依赖 EditText。**Latest diagnostics / Last game diagnostics** 支持复制完整诊断；返回本应用后保留最后的游戏样本及其采集时间。
 
-| 指标 | 来源和含义 |
+配置保存在应用私有 `files/native-hud.conf`，通过临时文件和同目录 rename 发布。首次升级由 C++ 导入旧 `performance_hud` SharedPreferences 的字段、顺序、root 选择和显示设置；之后只使用原生配置。损坏或非法配置采用受限默认值。
+
+## 指标来源
+
+| 指标 | C++ 采集来源和含义 |
 | --- | --- |
-| 前台应用 | root 下的 Activity/Window 焦点记录，包含正确 Android 用户 |
-| FPS、帧时间、P95 | 指定应用 Surface 的 `dumpsys SurfaceFlinger --latency` 第二列 actual-present 时间戳 |
-| FPS 来源、Surface | 实际使用的采集来源与层名，便于识别选错层或不支持的设备 |
-| GPU 型号、驱动、API | 本应用的 Vulkan 物理设备查询；驱动版本显示厂商原始值，API 为 Vulkan API，不代表游戏使用的图形 API 或游戏独立加载的驱动 |
-| CPU 频率、负载 | cpufreq 当前频率（分 policy/核心）、`/proc/stat` 增量，属于整机 CPU |
-| CPU 功耗 | 用户指定且单位已知的真实 CPU 功率传感器；没有适用节点时不可用 |
-| GPU 频率、负载 | 已知单位的 Adreno/devfreq 节点及 Adreno busy/total，设备可能不提供 |
-| 内存 | Android 报告的整机已用/总内存 |
-| 电池功率、温度 | 电流 × 电压估算的整机电池功率、系统电池温度；不是 CPU 单独功耗 |
-| 温控状态 | Android 10+ 系统温控压力级别，不是 CPU 核心温度 |
-| 屏幕分辨率、刷新率 | 当前物理显示模式，与游戏 FPS、内部渲染尺寸独立 |
-| 引擎内部/输出分辨率、来源 | 只接受经过验证的引擎读数；具体覆盖范围见下一节 |
+| 前台应用 | root 下的 Activity/Window 焦点记录；按包名和 Android 用户隔离 |
+| FPS、帧时间、P95 | `dumpsys SurfaceFlinger --latency` 的第二列 actual-present 时间戳 |
+| FPS 来源、Surface | 实际选中的游戏层；不使用监控器自身的渲染 FPS 或屏幕刷新率补值 |
+| GPU 型号、驱动、API | Vulkan 物理设备查询；原始驱动版本和 Vulkan API，不代表游戏使用的独立驱动/API |
+| CPU 时钟、使用率 | cpufreq policy/核心节点、`/proc/stat` 差分；排除重复包含的 guest 计数 |
+| CPU 功耗 | 用户确认单位的 `/sys/` CPU 功率传感器；原始值乘以 W 系数 |
+| GPU 时钟、使用率 | Adreno/devfreq 已知 Hz 节点和 Adreno busy/total |
+| 内存 | `/proc/meminfo` 的 MemTotal、MemAvailable；整机已用/总内存 |
+| 电池功率、温度 | C++ 调用 Android 电池 API；电流×电压是整机电池功率估计，不是 CPU 功耗 |
+| 温控 | C++ 调用 Android 10+ 温控压力 API，不是 CPU 核心温度 |
+| 显示 | C++ 查询物理显示模式、刷新率、密度、旋转；系统属性读取型号和 Android 版本 |
+| 引擎内部/输出尺寸 | 校验后的引擎自报数据；缺少兼容读取器时明确显示 N/A |
 
-可在“Surface 精确名称覆盖”中填入属于当前前台应用的完整层名，解决多 Surface 游戏的自动选择歧义。空白时自动选择匹配包名的活跃 SurfaceView。分屏、多窗口或厂商定制合成器可能需要人工确认所选 Surface。
+CPU 传感器只接受 `/sys/` 路径，不接受 `..` 或 shell 语法。单位系数：µW → `0.000001`，mW → `0.001`，W → `1`。电池节点、频率或温度不能替代 CPU 功率。不可访问或不支持的指标显示 N/A，不推测数据。
 
-CPU 功耗路径仅接受 `/sys/` 下的只读节点，必须确认它测量的是 CPU 功率。乘数把原始读数转换为 W：µW 为 `0.000001`，mW 为 `0.001`，W 为 `1`。频率、温度或电池节点不能据此变成 CPU 功耗读数。
+FPS 统计去除重复、零值、pending 和未来时间戳。换应用、换 Surface、休眠后重新建立基线；没有新帧为 0 FPS，没有有效数据为 N/A。历史环被覆盖时标注 `retained ring only`，仅报告保留下来的呈现节奏。不会清空 SurfaceFlinger 全局统计。
 
-## Unity / Unreal 与第三方游戏
+采样在 C++ 工作线程串行执行，500/1000/2000 ms 是每轮完成后的等待间隔；实际周期还包含系统命令耗时。root 授权等待最多 30 秒，普通查询有独立短超时，输出受限且持续排空。停止会取消等待、终止子进程组并 join 工作线程。熄屏暂停采样；撤销悬浮权限会结束会话。
 
-目标场景包括一加 Android 15 root 设备上的王者荣耀（`com.tencent.tmgp.sgame`）、和平精英（`com.tencent.tmgp.pubgmhd`）。当前实现自动检查精确前台进程、Android 用户、可读引擎库和已安装游戏版本；包名识别不等于已读到内部渲染尺寸。
+## 引擎尺寸的边界
 
-**这两个游戏当前没有经过真机/版本验证的内部渲染分辨率读取器，因此该字段会显示 N/A。** Unity/Unreal 没有给外部 root 应用提供跨版本通用的内部渲染尺寸接口。Surface 缓冲区、屏幕尺寸、画质设置、引擎名称和最高分配尺寸，都不足以证明当前帧在超分辨率之前的实际内部渲染尺寸。
-
-引擎扩展契约允许加入按包名和版本精确匹配的读取器；必须在目标游戏版本验证数据位置、单位、进程重启和动态分辨率变化后才能启用。没有匹配读取器时不猜测内存偏移。设置中的“复制最近游戏诊断”可提供设备、目标进程、游戏版本、采样 Surface 和失败原因，供继续适配使用；返回设置页后保留游戏采样的原始时间戳。
-
-另提供可选的开发者遥测协议及 Unity 示例，适用于可以修改游戏的开发者；它不使已有第三方游戏自动支持内部尺寸读取。协议、适配接口与已知限制见[引擎说明](engine-resolution.md)。
-
-## FPS 的解释
-
-FPS 是选中应用缓冲区被呈现的计数，不是屏幕刷新次数，也不是引擎渲染循环调用次数。平均/P95 帧时间是相邻呈现时间戳间隔，不是 GPU 执行时间。重复环形缓冲区数据不会重复计数；有效数据中没有新帧时显示 0 FPS，无法取得有效数据时显示 N/A。
-
-系统通常只保留有限帧记录。在高帧率或较长采样周期下，旧记录可能全部覆盖，此时仅能统计可观测的最近记录，来源明确标注 `recent ring; shorter window`。不会通过清空 SurfaceFlinger 全局统计改变其他工具的数据。厂商或 Android 版本禁用 `--latency` 时不保证可用。
+Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。当前读取兼容的开发者遥测文件，同时可以识别可读进程的引擎库、PID、Android 用户和包版本；没有已验证的王者荣耀/和平精英私有尺寸读取器。显示模式、Surface、交换链大小均不能替代升采样前尺寸。协议与 Unity 示例见[引擎说明](engine-resolution.md)。
 
 ## 生命周期与验证
 
-加载插件只建立面板监听、类型化宿主能力和报告缓存，不自动申请权限或启动采集。显式启动的前台服务归宿主所有，切换游戏、Surface 重建或旋转不会由插件析构误停；显式停止会取消 root 进程、采样线程、通知和悬浮窗。服务不在开机或进程被杀后自动重启。
+插件使用显式依赖 `host.performance-hud`。加载/卸载仅处理 UI 监听和缓存；用户动作才触发权限或会话。配置界面的临时键盘状态归 UI 宿主对象所有。C++ Session 独立于 Activity Surface 存活；Android Service 管理其启停。
 
-自动测试覆盖 C++ 注册与卸载、重复加载、报告缓存，帧统计与包名/Surface 选择、计数器及单位转换、引擎报告数据校验和 root 超时/输出上限。构建和主机测试不能验证设备的 SurfaceFlinger 格式、SELinux、root 管理器、功耗传感器或游戏私有结构。
+主窗口和悬浮窗持有独立 ImGui 上下文、Vulkan 实例/设备/交换链。ImGui 访问通过宿主互斥锁串行化，悬浮窗不复用带全局窗口状态的 Android backend。每次 Surface 销毁先取消并 join 渲染线程，等待 GPU 后释放资源。通知停止、插件停止和错误终止均清理窗口；服务不自动重启。
 
-运行 `./gradlew testDebugUnitTest` 执行五组采集回归测试，标准 Android 构建工作流也会执行它们。引擎 JSON 测试使用真实的 JVM JSON 实现，不使用 Android stub 返回值；shell 超时测试在有 `/bin/sh` 的主机运行，无需 root。C++ 插件测试命令见[插件文档](cpp-plugins.md#宿主测试)。
+主机 CTest 覆盖插件生命周期、ImGui 配置/软键盘绘制、FPS 环、前台隔离、硬件计数、JSON 校验、配置往返、命令超时/取消/输出上限及线程退出。运行方法见[插件文档](cpp-plugins.md#宿主测试)。Android CI 同时构建两种 ABI 的 APK 并执行 Lint。
 
-真机应验证：root 允许/拒绝/超时；无悬浮权限；快速切换两款游戏；游戏暂停和静止场景；横竖屏；熄屏恢复；撤销权限；通知停止；关闭插件；进程退出后没有残留窗口。开启动态分辨率的引擎读取器需以游戏内部调试数据单独核对，不能仅和屏幕设置比较。
+真机验收仍需：权限允许/拒绝/撤销、root 拒绝/超时、切换游戏、横竖屏、Activity/Surface 重建、熄屏恢复、透明度和触摸穿透、通知停止、快速启动/停止、旧配置导入、设备实际 SurfaceFlinger 格式与传感器单位。主机测试和 APK 构建不代表上述设备行为已通过。

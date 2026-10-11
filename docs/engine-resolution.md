@@ -4,15 +4,15 @@
 
 ## 已安装的第三方游戏
 
-开启 root 采集后，自动根据前台包名、Android 用户和进程查询引擎共享库：`libunity.so` 识别为 Unity，`libUE4.so` / `libUnreal.so` 识别为 Unreal；同时读取安装包的 `versionCode`。支持显示《王者荣耀》`com.tencent.tmgp.sgame` 和《和平精英》`com.tencent.tmgp.pubgmhd` 的识别名称，**名称本身不作为引擎类型证据**。没有读取到引擎库时显示 Unknown。
+开启 root 采集后，自动根据前台包名、Android 用户和进程查询引擎共享库：`libunity.so` 识别为 Unity，`libUE4.so` / `libUnreal.so` 识别为 Unreal；同时读取安装包的 `versionCode`。支持按《王者荣耀》`com.tencent.tmgp.sgame` 和《和平精英》`com.tencent.tmgp.pubgmhd` 的包名定位进程，**名称本身不作为引擎类型证据**。没有读取到引擎库时显示 Unknown。
 
-当前实现自动识别进程、引擎和游戏版本，并提供按游戏版本扩展读取器的接口；**尚未提供这两个游戏的内部渲染分辨率读取器**。因此只有识别到引擎时，内部尺寸仍会明确显示 `N/A (no compatible ... resolution reader)`。这不是已完成对任意 Unity/UE 游戏的内部尺寸读取。
+当前实现自动识别进程、引擎和游戏版本，并允许在 C++ 采集器中扩展按游戏版本验证的读取器；**尚未提供这两个游戏的内部渲染分辨率读取器**。因此只有识别到引擎时，内部尺寸仍会明确显示 `N/A (no compatible ... resolution reader)`。这不是已完成对任意 Unity/UE 游戏的内部尺寸读取。
 
-root 只能提供读取权限，不能把跨版本变化的引擎对象布局变成稳定 API。实现第三方游戏读取器需要相应版本的可验证渲染数据入口、ABI、引擎库构建身份和真实设备上的升采样前尺寸验证。`EngineResolutionAdapter` 要求未知版本返回不支持；不得套用来源不明的偏移、用屏幕大小补值或把其他进程的样本移过来。
+root 只能提供读取权限，不能把跨版本变化的引擎对象布局变成稳定 API。实现第三方游戏读取器需要相应版本的可验证渲染数据入口、ABI、引擎库构建身份和真实设备上的升采样前尺寸验证。新增 C++ 读取器必须对未知版本返回不支持；不得套用来源不明的偏移、用屏幕大小补值或把其他进程的样本移过来。
 
 一加 Android 15 上，实际覆盖还取决于游戏构建及系统 SELinux 的进程可读性。直接从 APK 映射的原生库在 `/proc/<pid>/maps` 中可能只显示 APK 路径；这种情况下目前无法确定引擎，显示 Unknown，而不从游戏名称猜测。游戏在不同包名的独立子进程里运行时也需要专项支持。工作资料用户使用自己的 Android user ID 查询，不读取主用户下同包名游戏的数据。
 
-设置页的“复制最近游戏诊断”可以提供包名、引擎来源/版本、PID、Android 用户和采集状态，作为对应游戏版本适配的依据。仅有这些信息还不能确定内存地址或内部尺寸。
+ImGui 设置页的 **Last game diagnostics → Copy game diagnostics**可以提供包名、引擎来源/版本、PID、Android 用户和采集状态，作为对应游戏版本适配的依据。仅有这些信息还不能确定内存地址或内部尺寸。
 
 ## 可控游戏的可选诊断导出
 
@@ -67,4 +67,4 @@ UE 项目应在自己确认动态分辨率和 Screen Percentage 已应用、升�
 3. 暂停发布 6 秒、填写其他包名、终止报告 PID、换 Android 用户，均应显示 N/A。
 4. 普通安装版游戏没有兼容读取器时，应显示检测到的引擎/游戏版本以及缺失读取器的原因，不能显示屏幕尺寸充当内部尺寸。
 
-`tests/kotlin/dev/snowflake/vulkan/EngineResolutionTest.kt` 覆盖协议新鲜度、字段边界、前台包隔离、内部与输出尺寸分离以及保守的引擎库识别；设备上的真实渲染行为仍需对应游戏版本验证。
+`app/src/main/cpp/tests/native_monitor_test.cpp` 覆盖协议新鲜度、字段边界、前台包隔离、内部与输出尺寸分离和 JSON 严格类型检查；设备上的真实渲染行为仍需对应游戏版本验证。

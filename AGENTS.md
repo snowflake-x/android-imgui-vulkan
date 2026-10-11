@@ -21,13 +21,13 @@
 bool UpdateSurfaceSize(int width, int height);
 ```
 
-## Java / Kotlin 文档与互操作
+## Android 桥接与原生实现
 
-- Java 类、公开/受保护方法和 JNI 入口必须有 Javadoc（`/** ... */`），首句说明用途，并按需使用 `@param`、`@return`、`@throws`；不要使用 Javadoc 不支持的 `@brief`、`@note`。
-- Java 文档需说明异步行为、调用线程、并发状态、超时、输出上限及 Activity 销毁行为。
-- 当前 Android 宿主使用 Kotlin/JVM；Kotlin 类、公开 API 和 JNI 入口采用 KDoc。后续新增 Java 源码仍须采用 Javadoc。
-- Kotlin 迁移时配置与 AGP/Gradle 兼容的 Kotlin Android 插件及一致的 JVM target，保持 Manifest 中的 Activity 全名及 NativeActivity 继承关系。
-- JNI 按 JVM 方法名称和描述符调用。迁移必须保留 `getSystemReport(): String`、`getRootReport(): String`、`requestRootInfo(): Unit`、`showError(String): Unit` 的公开实例方法形态，并保留跨线程可见性、单任务控制和进程清理逻辑。不要把这些入口直接改为 suspend、顶层或 companion 方法。
+- 界面、配置、指标采集和系统信息读取都放在 C++；界面使用 ImGui。不得重新引入 Kotlin 业务层、Android 配置表单或 TextView HUD。
+- Java 只承担 NativeActivity/Service 生命周期、系统权限和通知、WindowManager Surface 容器及回调桥接。公开方法和 JNI 入口保留 Javadoc，说明线程、取消与资源生命周期；不要在 Java Javadoc 中使用 `@brief`。
+- 系统公共 API 缺少 NDK 对应项时，从 C++ 通过 JNI 调用；不要保存跨线程 JNIEnv 或局部引用。进程级 Application 全局引用由原生平台宿主持有。
+- 主界面与悬浮窗拥有独立 ImGui/Vulkan 上下文，访问 ImGui 必须持有宿主互斥锁并显式选择上下文。Surface 释放前取消并 join 渲染线程；等待 GPU 后销毁资源。
+- 原生采集线程必须支持取消、超时、输出上限和 join；不得在渲染回调中执行 shell。root 保持为显式用户选择，错误/缺失数据不得用推测值替代。
 
 ## C++ 插件扩展
 

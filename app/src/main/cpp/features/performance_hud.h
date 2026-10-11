@@ -10,8 +10,8 @@
 namespace vulkanscope {
 
 /**
- * @brief 宿主管理的前台 HUD 会话能力；插件只同步读取快照和转发用户动作。
- * @note Android 服务拥有采集会话，插件或图形表面销毁不会停止用户启动的会话。
+ * @brief 宿主管理的原生 HUD 会话能力；插件同步读取快照并绘制原生配置。
+ * @note C++ 会话由 Android 服务生命周期桥接持有，插件或图形表面销毁不会停止用户启动的会话。
  */
 class HostPerformanceHud final {
 public:
@@ -28,7 +28,7 @@ public:
     std::string report() const { return readReport_(); }
 
     /**
-     * @brief 响应用户点击，打开宿主的 HUD 配置界面。
+     * @brief 在当前 ImGui 帧内绘制已展开的原生 HUD 配置。
      */
     void configure() const { configure_(); }
 

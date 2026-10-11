@@ -198,6 +198,7 @@ struct ImGui_ImplVulkanH_Window
     VkSwapchainKHR      Swapchain;
     VkSurfaceKHR        Surface;
     VkSurfaceFormatKHR  SurfaceFormat;
+    VkCompositeAlphaFlagBitsKHR CompositeAlpha; ///< VulkanScope: composition mode for translucent Android overlays.
     VkPresentModeKHR    PresentMode;
     VkRenderPass        RenderPass;
     VkPipeline          Pipeline;               // The window pipeline may uses a different VkRenderPass than the one passed in ImGui_ImplVulkan_InitInfo
@@ -216,6 +217,7 @@ struct ImGui_ImplVulkanH_Window
         memset((void*)this, 0, sizeof(*this));
         PresentMode = (VkPresentModeKHR)~0;     // Ensure we get an error if user doesn't set this.
         ClearEnable = true;
+        CompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     }
 };
 

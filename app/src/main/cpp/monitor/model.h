@@ -1,0 +1,77 @@
+#pragma once
+#include <array>
+#include <cstdint>
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace vulkanscope::monitor {
+struct Metric {
+    const char *id;
+    const char *label;
+    bool enabled;
+};
+const std::vector<Metric> &Metrics();
+struct Config {
+    bool root = false;
+    int interval = 1000, textSize = 14, opacity = 80, corner = 0;
+    std::string surface, powerPath;
+    double powerScale = 0.000001;
+    std::vector<std::string> order;
+    std::map<std::string, bool> enabled;
+    Config();
+    bool has(const std::string &id) const;
+    void normalize();
+};
+/** @brief 原子保存私有配置；失败返回错误，不覆盖已有文件。 */
+bool SaveConfig(const std::string &path, Config config, std::string &error);
+Config LoadConfig(const std::string &path);
+std::string Quote(const std::string &value);
+bool ValidPowerPath(const std::string &value);
+std::int64_t MonotonicNs();
+std::int64_t BootMs();
+std::optional<double> Number(const std::string &value);
+std::string Format(double value, int precision = 1);
+using Values = std::map<std::string, std::string>;
+std::string Report(const Config &config, const Values &values);
+using Ticks = std::array<std::uint64_t, 8>;
+std::optional<Ticks> CpuTicks(const std::string &text);
+std::optional<double> CpuLoad(const Ticks &before, const Ticks &after);
+std::optional<double> GpuLoad(const std::string &text);
+struct Foreground {
+    std::string package;
+    int user = -1;
+};
+std::optional<Foreground> ParseForeground(const std::string &text, bool activities);
+std::vector<std::string> Surfaces(const std::string &text, const std::string &package,
+                                  const std::string &overrideName);
+struct Trace {
+    bool supported = false;
+    std::vector<std::int64_t> presents;
+};
+Trace ParseLatency(const std::string &text, std::int64_t now);
+struct FrameSample {
+    std::optional<double> fps, mean, p95;
+    bool truncated = false;
+    std::string status;
+};
+/** @brief 仅由采样线程持有，切换应用/Surface 或休眠后重置基线。 */
+class FrameStats {
+  public:
+    FrameSample update(const std::string &key, const Trace &trace, std::int64_t now);
+    void reset();
+
+  private:
+    std::string key_;
+    std::int64_t sample_ = 0, present_ = 0;
+};
+struct Telemetry {
+    std::string engine, source;
+    std::int64_t stamp = 0;
+    int pid = 0, width = 0, height = 0, outputWidth = 0, outputHeight = 0;
+};
+/** @brief 严格验证有界 JSON、包身份、整数尺寸与 CLOCK_BOOTTIME 新鲜度。 */
+std::optional<Telemetry> ParseTelemetry(const std::string &json, const std::string &package, std::int64_t now,
+                                        std::string &error);
+}

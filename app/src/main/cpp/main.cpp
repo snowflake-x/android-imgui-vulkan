@@ -14,9 +14,13 @@
 #include "imgui_impl_vulkan.h"
 #include "features/builtin_plugins.h"
 #include "features/performance_hud.h"
+#include "platform/android_bridge.h"
+#include "platform/overlay_renderer.h"
+#include "monitor/settings_ui.h"
 
 static android_app* app;
 static JNIEnv* env;
+static ImGuiContext* mainContext = nullptr;
 static VkInstance instance;
 static VkPhysicalDevice gpu;
 static VkDevice device;
@@ -44,32 +48,8 @@ static double nextRootRefresh = 0;
 static void check(VkResult result) {
     if (result < 0) throw std::runtime_error("Vulkan error: " + std::to_string(result));
 }
-static std::string javaText(const char* name) {
-    jclass cls = env->GetObjectClass(app->activity->clazz);
-    jmethodID method = env->GetMethodID(cls, name, "()Ljava/lang/String;");
-    auto value = static_cast<jstring>(env->CallObjectMethod(app->activity->clazz, method));
-    std::string result;
-    if (env->ExceptionCheck()) { env->ExceptionClear(); result = "Information unavailable"; }
-    else if (value) {
-        const char* text = env->GetStringUTFChars(value, nullptr);
-        if (text) { result = text; env->ReleaseStringUTFChars(value, text); }
-        env->DeleteLocalRef(value);
-    }
-    env->DeleteLocalRef(cls);
-    return result;
-}
-static void javaCall(const char* name, const char* message = nullptr) {
-    jclass cls = env->GetObjectClass(app->activity->clazz);
-    jmethodID method = env->GetMethodID(cls, name, message ? "(Ljava/lang/String;)V" : "()V");
-    if (message) {
-        jstring text = env->NewStringUTF(message);
-        env->CallVoidMethod(app->activity->clazz, method, text);
-        env->DeleteLocalRef(text);
-    } else env->CallVoidMethod(app->activity->clazz, method);
-    if (env->ExceptionCheck()) env->ExceptionClear();
-    env->DeleteLocalRef(cls);
-}
 static void cleanup() {
+    if (mainContext) ImGui::SetCurrentContext(mainContext);
     if (device) vkDeviceWaitIdle(device);
     /** @brief 所有插件回调和资源须在其借用的图形宿主之前销毁。 */
     plugins.reset();
@@ -78,7 +58,7 @@ static void cleanup() {
     rootReport.clear();
     nextRootRefresh = 0;
     if (backend) { ImGui_ImplVulkan_Shutdown(); backend = false; }
-    if (ImGui::GetCurrentContext()) { ImGui_ImplAndroid_Shutdown(); ImGui::DestroyContext(); }
+    if (mainContext) { ImGui_ImplAndroid_Shutdown(); ImGui::DestroyContext(mainContext); mainContext = nullptr; }
     if (device) {
         ImGui_ImplVulkanH_DestroyWindow(instance, device, &window, nullptr);
         vkDestroyDevice(device, nullptr);
@@ -119,12 +99,11 @@ static void initialize() {
     }
     if (!gpu) throw std::runtime_error("No Vulkan graphics/present queue available");
     vkGetPhysicalDeviceProperties(gpu, &properties);
-    char gpuReport[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE + 64];
-    std::snprintf(gpuReport, sizeof(gpuReport), "%s\n0x%08x\n%u.%u.%u",
-                  properties.deviceName, properties.driverVersion,
-                  VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion),
-                  VK_VERSION_PATCH(properties.apiVersion));
-    javaCall("publishGpuInfo", gpuReport);
+    vulkanscope::monitor::NativeSession().gpu({
+        {"gpu_model", properties.deviceName},
+        {"gpu_driver", std::to_string(properties.driverVersion) + " (raw)"},
+        {"gpu_api", std::to_string(VK_VERSION_MAJOR(properties.apiVersion)) + "." +
+            std::to_string(VK_VERSION_MINOR(properties.apiVersion)) + "." + std::to_string(VK_VERSION_PATCH(properties.apiVersion))}});
     float priority = 1.0f;
     VkDeviceQueueCreateInfo q{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
     q.queueFamilyIndex = family; q.queueCount = 1; q.pQueuePriorities = &priority;
@@ -140,9 +119,15 @@ static void initialize() {
     ImGui_ImplVulkanH_CreateOrResizeWindow(instance, gpu, device, &window, family, nullptr,
         ANativeWindow_getWidth(app->window), ANativeWindow_getHeight(app->window), 2);
     IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
+    mainContext = ImGui::CreateContext();
+    ImGui::SetCurrentContext(mainContext);
     auto& io = ImGui::GetIO();
     io.IniFilename = nullptr;
+    ImGui::GetPlatformIO().Platform_SetClipboardTextFn = [](ImGuiContext*, const char* text) { vulkanscope::CopyText(text); };
+    ImGui::GetPlatformIO().Platform_GetClipboardTextFn = [](ImGuiContext*) -> const char* {
+        static std::string clipboard;
+        clipboard = vulkanscope::PasteText(); return clipboard.c_str();
+    };
     float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f);
     ImFontConfig font; font.SizePixels = 18.0f * scale;
     io.Fonts->AddFontDefault(&font);
@@ -163,13 +148,18 @@ static void initialize() {
     if (!ImGui_ImplVulkan_Init(&init)) throw std::runtime_error("ImGui Vulkan initialization failed");
     backend = true;
     plugins = std::make_unique<vulkanscope::plugin::Runtime>();
-    auto reports = std::make_shared<vulkanscope::HostReports>([] { return javaText("getSystemReport"); });
+    auto reports = std::make_shared<vulkanscope::HostReports>([] { return vulkanscope::monitor::NativeSession().system(); });
     vulkanscope::RegisterBuiltinPlugins(*plugins, std::move(reports));
+    auto settings = std::make_shared<vulkanscope::monitor::SettingsState>();
     auto hud = std::make_shared<vulkanscope::HostPerformanceHud>(
-        [] { return javaText("getHudReport"); },
-        [] { javaCall("openHudSettings"); },
-        [] { javaCall("startPerformanceHud"); },
-        [] { javaCall("stopPerformanceHud"); });
+        [] { return vulkanscope::monitor::NativeSession().report(); },
+        [settings] {
+            if (ImGui::Button("Grant overlay permission")) vulkanscope::HudAction(env, app->activity->clazz, 0);
+            if (ImGui::Button("Allow HUD notification")) vulkanscope::HudAction(env, app->activity->clazz, 4);
+            vulkanscope::monitor::DrawSettings(*settings);
+        },
+        [] { vulkanscope::HudAction(env, app->activity->clazz, 1); },
+        [] { vulkanscope::HudAction(env, app->activity->clazz, 2); });
     vulkanscope::RegisterPerformanceHudPlugin(*plugins, std::move(hud));
     plugins->load("host.reports");
     for (const auto& feature : featureSettings) {
@@ -205,7 +195,7 @@ static void pluginControls() {
              * @brief 用户禁用立即停止宿主会话，避免下帧前 Surface 销毁丢失停用意图。
              * @note 这里已退出插件事件分发；普通插件清理只释放界面缓存和监听。
              */
-            if (!enabled && std::string(feature.id) == "performance-hud") javaCall("stopPerformanceHud");
+            if (!enabled && std::string(feature.id) == "performance-hud") vulkanscope::HudAction(env, app->activity->clazz, 2);
             pluginChanges.emplace_back(feature.id, enabled);
             feature.enabled = enabled;
         }
@@ -232,13 +222,13 @@ static void panel() {
     });
     pluginControls();
     if (rootReport.empty() || ImGui::GetTime() >= nextRootRefresh) {
-        rootReport = javaText("getRootReport");
+        rootReport = vulkanscope::monitor::NativeSession().rootReport();
         nextRootRefresh = ImGui::GetTime() + 1.0;
     }
     if (ImGui::CollapsingHeader("Optional root diagnostics", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextWrapped("Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data.");
         if (ImGui::Button("Request root / refresh", ImVec2(-1, ImGui::GetFontSize()*2.5f))) {
-            javaCall("requestRootInfo"); rootReport = javaText("getRootReport");
+            vulkanscope::monitor::NativeSession().requestRoot(); rootReport = vulkanscope::monitor::NativeSession().rootReport();
         }
         ImGui::TextWrapped("%s", rootReport.c_str());
     }
@@ -290,6 +280,8 @@ static void render() {
     window.SemaphoreIndex = (window.SemaphoreIndex + 1) % window.SemaphoreCount;
 }
 static void command(android_app*, int32_t cmd) {
+    std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex());
+    if (mainContext) ImGui::SetCurrentContext(mainContext);
     if (cmd == APP_CMD_INIT_WINDOW && app->window && !ready) initialize();
     if (cmd == APP_CMD_TERM_WINDOW) cleanup();
     if (cmd == APP_CMD_GAINED_FOCUS) focused = true;
@@ -299,8 +291,11 @@ static void command(android_app*, int32_t cmd) {
 void android_main(android_app* state) {
     app = state;
     if (app->activity->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+    vulkanscope::monitor::NativeSession().startSystemInfo();
     app->onAppCmd = command;
     app->onInputEvent = [](android_app*, AInputEvent* event) -> int32_t {
+        std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex());
+        if (mainContext) ImGui::SetCurrentContext(mainContext);
         return ready ? ImGui_ImplAndroid_HandleInputEvent(event) : 0;
     };
     bool failed = false;
@@ -310,13 +305,19 @@ void android_main(android_app* state) {
             int timeout = (ready && focused && !failed) ? 0 : -1;
             if (ALooper_pollOnce(timeout, nullptr, &events, reinterpret_cast<void**>(&source)) >= 0 && source)
                 source->process(app, source);
-            if (!app->destroyRequested && ready && focused && !failed) render();
+            if (!app->destroyRequested && ready && focused && !failed) {
+                std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex());
+                ImGui::SetCurrentContext(mainContext);
+                render();
+            }
         } catch (const std::exception& error) {
             __android_log_print(ANDROID_LOG_ERROR, "VulkanScope", "%s", error.what());
-            cleanup(); failed = true;
-            javaCall("showError", error.what());
+            { std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex()); cleanup(); } failed = true;
+            vulkanscope::HudAction(env, app->activity->clazz, 3);
         }
     }
-    cleanup();
+    { std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex()); cleanup(); }
+    vulkanscope::monitor::NativeSession().shutdownDiagnostics();
+    vulkanscope::monitor::NativeSession().stopSystemInfo();
     app->activity->vm->DetachCurrentThread();
 }

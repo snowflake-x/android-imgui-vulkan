@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 android {
     namespace = "dev.snowflake.vulkan"
@@ -22,13 +21,4 @@ android {
     packaging { jniLibs { useLegacyPackaging = false } }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     buildTypes { release { isMinifyEnabled = false } }
-    sourceSets.getByName("test").java.srcDirs("../tests/java", "../tests/kotlin")
-}
-dependencies {
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
-}
-kotlin {
-    jvmToolchain(25)
-    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }

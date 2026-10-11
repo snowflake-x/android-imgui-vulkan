@@ -1,6 +1,6 @@
 # VulkanScope · Android ImGui Vulkan
 
-原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。Android 应用层使用 **Kotlin**，通过 JNI 连接 C++ Vulkan/ImGui 渲染层。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。ImGui 面板使用英文；HUD 配置和悬浮窗使用 Android 字体显示中文。
+原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。界面、配置和采集均使用 **C++**，Java 仅保留 Android 生命周期桥接。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。主界面、HUD 配置和悬浮窗统一使用 ImGui 英文界面。
 
 ## 功能
 
@@ -29,16 +29,16 @@ GitHub 临时 runner 的调试签名可能变化，后续构建若提示签名�
 
 ## 本地构建
 
-使用最新 LTS **JDK 25**（CI 使用 Temurin 25）和 Android SDK 构建，首次构建需下载 Gradle/Android/Kotlin 插件。依赖版本：Gradle 9.1.0、AGP 8.13.2、Kotlin 2.3.0、SDK 35、NDK 28.0.13004108、CMake 3.22.1。
+使用最新 LTS **JDK 25**（CI 使用 Temurin 25）和 Android SDK 构建，首次构建需下载 Gradle/Android 插件。依赖版本：Gradle 9.1.0、AGP 8.13.2、SDK 35、NDK 28.0.13004108、CMake 3.22.1。
 
-JDK 25 用于运行 Gradle 和编译工具。为兼容 Android 的 D8/R8 工具链，Java/Kotlin 的 JVM 字节码目标统一保留为 17；可用平台 API 仍受 Android SDK 和 `minSdk = 26` 限制，不代表支持全部 Java 25 API。Android Studio 的 Gradle JDK 也应选择 JDK 25。
+JDK 25 用于运行 Gradle 和编译工具。为兼容 Android 的 D8/R8 工具链，Java 生命周期桥接的 JVM 字节码目标保留为 17；可用平台 API 仍受 Android SDK 和 `minSdk = 26` 限制，不代表支持全部 Java 25 API。Android Studio 的 Gradle JDK 也应选择 JDK 25。
 
 ```sh
 export JAVA_HOME=/path/to/jdk-25
 export PATH="$JAVA_HOME/bin:$PATH"
 sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
 export ANDROID_HOME=/path/to/android-sdk
-./gradlew assembleDebug assembleRelease lintDebug testDebugUnitTest
+./gradlew assembleDebug assembleRelease lintDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -49,12 +49,13 @@ NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受
 - `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、宿主面板与生命周期。
 - `app/src/main/cpp/plugin/`：可逆插件内核，管理依赖、类型事件、服务与作用域资源。
 - `app/src/main/cpp/features/`：帧率、设备信息、GPU 信息插件；界面 **Plugins** 可独立启停。
-- `features/performance_hud.*` 与 `HudService.kt`：插件控制面板、宿主管理的前台采集会话和可配置悬浮显示。
-- `ForegroundFpsCollector.kt`、`HardwareCollector.kt`、`EngineResolutionCollector.kt`：前台帧数据、硬件传感器及引擎识别；`HudSettingsActivity.kt` 提供配置和诊断。
+- `features/performance_hud.*`：性能插件面板与原生配置界面入口。
+- `app/src/main/cpp/monitor/`：配置保存、ImGui 设置、后台采集、进程取消、硬件/FPS/引擎解析。
+- `app/src/main/cpp/platform/`：C++ Android 公共 API 调用和独立 Vulkan/ImGui 悬浮窗渲染器。
 - [C++ 插件设计与接入](docs/cpp-plugins.md)：参考 DeepSeek harness / Cordis，说明回滚保证、扩展方式和宿主测试。
-- `app/src/main/java/dev/snowflake/vulkan/MainActivity.kt`：Kotlin NativeActivity、屏幕/设备信息与受限 root 查询；保留原生层调用的 JNI 方法名称和签名。
+- `MainActivity.java`、`HudService.java`：仅保留 Activity/Service/Surface 生命周期、权限和通知桥接。
 - `.github/workflows/android.yml`：自动编译、Lint、APK 上传、标签发布。
-- `app/src/main/cpp/vendor/imgui`：固定 Dear ImGui **v1.91.9b**，上游提交 `f5befd2d29e66809cd1110a152e375a7f1981f06`，附 MIT 许可证，构建时无需拉子模块。
+- `app/src/main/cpp/vendor/imgui`：固定 Dear ImGui **v1.91.9b**，上游提交 `f5befd2d29e66809cd1110a152e375a7f1981f06`，附 MIT 许可证，构建时无需拉子模块。Vulkan 窗口辅助结构增加了可选 CompositeAlpha，以支持透明悬浮窗。
 
 ## 真机验收
 

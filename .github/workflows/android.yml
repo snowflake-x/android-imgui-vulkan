@@ -28,7 +28,7 @@ jobs:
       - name: Install pinned SDK tools
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
       - name: Build and lint
-        run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
+        run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug
       - name: Prepare APK files and checksums
         run: |
           mkdir -p dist

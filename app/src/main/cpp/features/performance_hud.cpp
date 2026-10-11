@@ -13,6 +13,7 @@ struct HudReport {
     std::string text;
     double nextRefresh = 0;
     bool initialized = false;
+    bool settings = false;
 };
 
 }
@@ -37,7 +38,7 @@ void RegisterPerformanceHudPlugin(plugin::Runtime& runtime,
             ImGui::PushID("performance-hud");
             ImGui::TextWrapped("Start a HUD session, then switch to your game. Stop it here or from its notification.");
             if (ImGui::Button("Configure")) {
-                host.borrow([](HostPerformanceHud& value) { value.configure(); });
+                state->settings = !state->settings;
                 state->initialized = false;
             }
             ImGui::SameLine();
@@ -51,6 +52,7 @@ void RegisterPerformanceHudPlugin(plugin::Runtime& runtime,
                 state->initialized = false;
             }
             ImGui::TextWrapped("%s", state->text.c_str());
+            if (state->settings) host.borrow([](HostPerformanceHud& value) { value.configure(); });
             ImGui::PopID();
         });
     }});
