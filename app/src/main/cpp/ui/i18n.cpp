@@ -89,9 +89,9 @@ constexpr Entry entries[] = {
     {"Changes are saved in native storage. The overlay is touch-through; configure it here.",
      "修改会自动保存。悬浮窗支持触摸穿透，请在此处配置。"},
     {"Fields and display order", "字段与显示顺序"},
-    {"Core rows keep their classic positions. Disabled values show --. Enable Additional sensor rows to show "
+    {"Core rows keep their classic positions. Disabled values show OFF; unavailable values show --. Enable Additional sensor rows to show "
      "other fields in the order below.",
-     "核心行保持固定位置，停用值显示 --。开启“附加传感器行”后，其他字段按下方顺序显示。"},
+     "核心行保持固定位置，停用值显示 OFF，缺失值显示 --。开启“附加传感器行”后，其他字段按下方顺序显示。"},
     {"Up", "上移"},
     {"Down", "下移"},
     {"Advanced sensors and Surface selection", "高级传感器与 Surface 选择"},

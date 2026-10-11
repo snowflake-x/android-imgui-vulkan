@@ -38,7 +38,7 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
         return string + "...";
     };
     float y = origin.y + pad;
-    std::string gpuName = config.has("gpu_model") ? value(s, "gpu_model") : "--";
+    std::string gpuName = config.has("gpu_model") ? value(s, "gpu_model") : "GPU: OFF";
     if (gpuName.empty())
         gpuName = "GPU unavailable";
     std::string dimensions = value(s, "display_resolution");
@@ -65,12 +65,12 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     text(right - width(hz), y, hz, white);
     y += line;
     /** @brief 固定单元格右对齐，与数值长度无关；仅异常的边界值变红。 */
-    auto row = [&](const char *label, const HudRange &values, ImU32 color, bool fps) {
+    auto row = [&](const char *label, const HudRange &values, ImU32 color, bool fps, bool enabled) {
         const float currentRight = left + 7.5f * f;
         const float bracket = left + 8.3f * f;
         const float minRight = left + 13.0f * f;
         const float maxRight = right - .6f * f;
-        const auto current = number(values.current), minimum = number(values.minimum),
+        const auto current = enabled ? number(values.current) : "OFF", minimum = number(values.minimum),
                    maximum = number(values.maximum);
         text(left, y, label, color);
         text(currentRight - width(current), y, current, color);
@@ -82,11 +82,11 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
         text(right - width("]"), y, "]", color);
         y += line;
     };
-    row("FPS:", config.has("fps") ? s.fps : HudRange{}, white, true);
-    row("Pre:", config.has("frame_time") ? s.present : HudRange{}, blue, false);
-    row("GPU:", s.gpu, green, false);
+    row("FPS:", config.has("fps") ? s.fps : HudRange{}, white, true, config.has("fps"));
+    row("Pre:", config.has("frame_time") ? s.present : HudRange{}, blue, false, config.has("frame_time"));
+    row("GPU:", s.gpu, green, false, true);
     text(left, y, "Mem:", white);
-    const auto memory = (config.has("app_memory") ? number(s.processMb) : std::string("--")) + "MB";
+    const auto memory = config.has("app_memory") ? number(s.processMb) + "MB" : "OFF";
     text(left + 8.8f * f - width(memory), y, memory, white);
     const auto gpuMemory = "[" + number(s.gpuMb) + "MB]";
     text(right - width(gpuMemory), y, gpuMemory, green);
@@ -126,11 +126,10 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
         plot(s.gpuGraph, green);
         y = bottom + .18f * f;
     }
-    std::string caption = s.status.empty() ? "Pre ms / GPU timing unavailable / Mem RSS" : s.status;
-    if (s.gpu.current)
-        caption = "Pre / GPU: ms";
-    text(left, y, fit(caption, right - left, .39f), dim, .39f);
-    y += .62f * f;
+    for (const auto &caption : HudCaptions(config, s)) {
+        text(left, y, fit(caption, right - left, .5f), dim, .5f);
+        y += .62f * f;
+    }
     if (config.hudExtras) {
         for (const auto &id : config.order) {
             if (!config.has(id) || id == "fps" || id == "frame_time" || id == "gpu_model" ||

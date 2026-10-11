@@ -62,6 +62,21 @@ HudSnapshot HudHistory::update(const Values &values, const FrameSample &frames, 
         result.status.clear();
     return result;
 }
+std::array<std::string, 3> HudCaptions(const Config &config, const HudSnapshot &snapshot) {
+    const auto foreground = snapshot.values.find("foreground");
+    const auto target = foreground == snapshot.values.end() || foreground->second.rfind("N/A", 0) == 0
+                            ? "unavailable" : foreground->second;
+    const auto state = !config.has("fps") && !config.has("frame_time") ? "FPS / Pre: OFF"
+                       : snapshot.status.empty() ? "Pre: ms | Mem: main-process RSS" : snapshot.status;
+    std::array<std::string, 3> result{
+        "App: " + target, state,
+        std::string("GPU time: ") + (snapshot.gpu.current ? "ms" : "unavailable") +
+            " | VRAM: " + (snapshot.gpuMb ? "MB" : "unavailable")};
+    for (auto &caption : result)
+        std::replace_if(caption.begin(), caption.end(),
+                        [](char ch) { return ch == '\n' || ch == '\r' || ch == '\t'; }, ' ');
+    return result;
+}
 HudSize MeasureHud(const Config &config, float fontSize, float maxWidth, float maxHeight) {
     float rows = 6.0f;
     if (config.hudExtras) {
@@ -71,7 +86,7 @@ HudSize MeasureHud(const Config &config, float fontSize, float maxWidth, float m
                 rows += 0.7f;
     }
     const float unitsWide = 18.8f;
-    const float unitsHigh = 0.7f + rows * 1.23f + (config.hudGraph ? 3.6f : 0.0f) + 0.65f;
+    const float unitsHigh = 0.7f + rows * 1.23f + (config.hudGraph ? 3.6f : 0.0f) + 1.9f;
     fontSize = std::max(1.0f, std::min({fontSize, maxWidth / unitsWide, maxHeight / unitsHigh}));
     return {std::min(maxWidth, unitsWide * fontSize), std::min(maxHeight, unitsHigh * fontSize), fontSize};
 }

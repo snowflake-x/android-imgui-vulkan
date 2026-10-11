@@ -197,6 +197,11 @@ void Session::collect() {
                 std::ostringstream text;
                 text << system_ << "\nSample CLOCK_BOOTTIME ms: " << BootMs() << "\nRoot opt-in: " << c.root
                      << '\n';
+                text << "Enabled fields:";
+                for (const auto &id : c.order)
+                    if (c.has(id))
+                        text << ' ' << id;
+                text << '\n';
                 for (const auto &item : values)
                     text << item.first << ": " << item.second << '\n';
                 diagnostics_ = text.str();

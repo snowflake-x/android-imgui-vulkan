@@ -81,7 +81,7 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     changed |= ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Corner").c_str(), &config.corner, corners, 4);
     ImGui::TextWrapped("%s", Text(language, "Changes are saved in native storage. The overlay is touch-through; configure it here."));
     if (ImGui::TreeNode(Label(language, "Fields and display order").c_str())) {
-        ImGui::TextWrapped("%s", Text(language, "Core rows keep their classic positions. Disabled values show --. Enable Additional sensor rows to show other fields in the order below."));
+        ImGui::TextWrapped("%s", Text(language, "Core rows keep their classic positions. Disabled values show OFF; unavailable values show --. Enable Additional sensor rows to show other fields in the order below."));
         for (std::size_t i = 0; i < config.order.size(); ++i) {
             const auto id = config.order[i];
             auto metric =

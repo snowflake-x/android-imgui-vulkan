@@ -48,6 +48,18 @@ int main(int argc, char **argv) {
     sample = history.update(values, frames, 6);
     require(sample.presentGraph.size() == 200 && std::abs(*sample.present.current - 16.67) < .001);
     Config config;
+    auto captions = HudCaptions(config, sample);
+    require(captions[0] == "App: game" && captions[2].find("unavailable") != std::string::npos);
+    sample.status = "SurfaceFlinger query timed out";
+    captions = HudCaptions(config, sample);
+    require(captions[1] == sample.status && captions[2].find("unavailable") != std::string::npos);
+    sample.status = "Query failed:\nPermission Denial\r\n";
+    require(HudCaptions(config, sample)[1].find_first_of("\r\n\t") == std::string::npos);
+    config.enabled["fps"] = config.enabled["frame_time"] = false;
+    require(HudCaptions(config, sample)[1] == "FPS / Pre: OFF");
+    config = Config{};
+    sample.values["foreground"] = "N/A (Root denied)";
+    require(HudCaptions(config, sample)[0] == "App: unavailable");
     for (float width : {120.f, 320.f, 1080.f}) {
         auto size = MeasureHud(config, 40, width, 200);
         require(size.width <= width && size.height <= 200 && size.fontSize > 0);
@@ -64,6 +76,7 @@ int main(int argc, char **argv) {
     ImGui::NewFrame();
     config.opacity = 100;
     sample.values = {{"gpu_model", "Adreno 750"},
+                     {"foreground", "com.example.game"},
                      {"display_resolution", "2940 x 1840 px (display mode)"},
                      {"display_refresh", "60 Hz"}};
     sample.fps = {56.25, 30, 60};
