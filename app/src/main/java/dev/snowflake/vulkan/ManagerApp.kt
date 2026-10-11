@@ -61,19 +61,22 @@ internal fun ManagerApp(
             val pluginScroll = rememberLazyListState()
             val settingsScroll = rememberLazyListState()
             val performanceScroll = rememberLazyListState()
+            val helpScroll = rememberLazyListState()
+            var helpReturn by rememberSaveable { mutableStateOf("main") }
             val scrollBehavior = MiuixScrollBehavior()
-            BackHandler(screen != "main") { screen = "main" }
+            BackHandler(screen != "main") { screen = if (screen == "metric_help") helpReturn else "main" }
             val title = when (screen) {
                 "settings" -> tr("Global settings", "全局设置")
                 "performance_settings" -> tr("Performance settings", "性能插件设置")
                 "diagnostics" -> tr("Diagnostics", "诊断")
+                "metric_help" -> tr("Metric guide", "指标说明")
                 else -> if (page == 0) "VulkanScope" else tr("Plugins", "插件列表")
             }
             Scaffold(
                 topBar = {
                     TopAppBar(title = title, scrollBehavior = scrollBehavior,
                         navigationIcon = {
-                            if (screen != "main") IconButton(onClick = { screen = "main" }) {
+                            if (screen != "main") IconButton(onClick = { screen = if (screen == "metric_help") helpReturn else "main" }) {
                                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = tr("Back", "返回"))
                             }
                         }, actions = {
@@ -103,16 +106,29 @@ internal fun ManagerApp(
                         state = when (screen) {
                             "settings" -> settingsScroll
                             "performance_settings" -> performanceScroll
+                            "metric_help" -> helpScroll
                             else -> if (page == 0) homeScroll else pluginScroll
                         },
                         contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (state.loading) item { MessageCard(tr("Preparing native monitoring…", "正在初始化原生监控…")) }
                         state.error?.let { error -> item { MessageCard(error) } }
                         if (!state.loading) {
-                            if (screen == "settings") {
+                            if (screen == "metric_help") {
+                                items(metricHelp, key = { it.id }) { help ->
+                                    Card {
+                                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            SectionTitle(tr(help.titleEn, help.titleZh))
+                                            Text(tr(help.english, help.chinese), fontSize = 15.sp)
+                                        }
+                                    }
+                                }
+                            } else if (screen == "settings") {
                                 item { InterfaceSettings(state, change) }
                                 item { StartupRootSettings(state, change) }
                             } else if (screen == "performance_settings") {
+                                item { TextButton(tr("Metric guide", "指标说明"), {
+                                    helpReturn = "performance_settings"; screen = "metric_help"
+                                }, Modifier.fillMaxWidth()) }
                                 item { PerformanceRootSettings(state, change) }
                                 item { DisplaySettings(state, change) }
                                 item { SectionTitle(tr("Fields and order", "字段与顺序")) }
@@ -155,7 +171,7 @@ internal fun ManagerApp(
                                 if (state.pluginEnabled("performance-hud")) item {
                                     HudCard(state, action, { screen = "performance_settings" }, {
                                         screen = "diagnostics"; loadDiagnostic("", 0)
-                                    })
+                                    }, { helpReturn = "main"; screen = "metric_help" })
                                 }
                                 if (state.pluginEnabled("device-info")) item { DeviceCard(state.data.optString("system")) }
                                 if (state.pluginEnabled("gpu-info")) item { GpuCard(state) }
@@ -218,7 +234,7 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
     }
 }
 
-@Composable private fun HudCard(state: ManagerState, action: (Int) -> Unit, configure: () -> Unit, diagnostics: () -> Unit) {
+@Composable private fun HudCard(state: ManagerState, action: (Int) -> Unit, configure: () -> Unit, diagnostics: () -> Unit, explain: () -> Unit) {
     val values = state.data.optJSONObject("values") ?: JSONObject()
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -249,6 +265,7 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(tr("Configure", "配置"), configure, Modifier.weight(1f))
                 TextButton(tr("Diagnostics", "游戏诊断"), diagnostics, Modifier.weight(1f))
+                TextButton(tr("Metric guide", "指标说明"), explain, Modifier.weight(1f))
             }
             if (!state.running && state.data.optString("report").isNotBlank()) Description(state.data.optString("report"))
         }

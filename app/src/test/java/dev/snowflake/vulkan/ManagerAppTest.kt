@@ -51,6 +51,18 @@ class ManagerAppTest {
         compose.onNodeWithText("主页").performClick()
         compose.onNodeWithText("配置").performClick()
         compose.onNodeWithText("Root 采样").assertExists()
+        compose.onNodeWithText("指标说明").performClick()
+        compose.onNodeWithText("如何读懂悬浮窗").assertExists()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Pre · 呈现间隔"))
+        compose.onNodeWithText("Pre · 呈现间隔").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("GPU · 执行耗时"))
+        compose.onNodeWithText("GPU · 执行耗时").assertIsDisplayed()
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithText("Root 采样").assertExists()
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithText("指标说明").performClick()
+        compose.onNodeWithContentDescription("返回").performClick()
+        compose.onNodeWithText("配置").assertExists()
     }
     @Test
     @Config(sdk = [35], qualifiers = "en-rUS-w891dp-h411dp-land-night-xhdpi")
