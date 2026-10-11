@@ -17,6 +17,8 @@ struct HudSnapshot {
     std::string status = "Start HUD to capture a foreground application";
     std::int64_t capturedNs = 0;
 };
+/** @brief 短暂延迟保留带年龄标记的快照，15 秒以上或停止时清除数值；不延长原采样时间。 */
+HudSnapshot DisplaySnapshot(const HudSnapshot &snapshot, std::int64_t now, int interval, bool stopped);
 /** @brief 统计只接收新呈现间隔；120 帧均值、1200 帧极值、200 帧曲线，不对轮询次数计数。 */
 class HudHistory {
   public:

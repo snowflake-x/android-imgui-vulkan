@@ -11,6 +11,32 @@ void require(bool value, const char *message = "Classic HUD regression") {
     if (!value)
         throw std::runtime_error(message);
 }
+/** @brief 慢采样显示原始年龄，超过硬期限或停止后不得继续显示旧数值。 */
+void snapshotFreshness() {
+    HudSnapshot sample;
+    sample.capturedNs = 1000000000LL;
+    sample.fps = {60, 50, 61};
+    sample.present = {16.7, 16, 20};
+    sample.gpu = {1, 1, 1};
+    sample.processMb = 123;
+    sample.values["engine_name"] = "Unity";
+    sample.values["graphics_api_status"] = "observed";
+    const auto slow = DisplaySnapshot(sample, 8000000000LL, 1000, false);
+    require(slow.fps.current == 60 && slow.processMb == 123 && slow.gpu.current == 1,
+            "slow root cycle does not blank every metric at five seconds");
+    require(slow.capturedNs == sample.capturedNs && slow.status.find("7.0s ago") != std::string::npos,
+            "retained data is explicitly old and never receives a new timestamp");
+    const auto expired = DisplaySnapshot(sample, 17000000000LL, 1000, false);
+    require(!expired.fps.current && !expired.processMb && !expired.gpu.current &&
+            expired.values.at("graphics_api_status") == "waiting", "hard expiry clears stale metrics");
+    const auto stopped = DisplaySnapshot(sample, 2000000000LL, 1000, true);
+    require(!stopped.fps.current && stopped.values.at("engine_name") == "N/A (Capture stopped)",
+            "stopping never retains numeric data or engine identity");
+    HudSnapshot missing;
+    missing.capturedNs = 8000000000LL;
+    require(!DisplaySnapshot(missing, 9000000000LL, 1000, false).fps.current,
+            "explicitly unavailable new samples are not replaced with old measurements");
+}
 /** @brief 区分图形调用证据、关闭及各失败阶段，不能将设备能力、呈现来源或旧结果误当成活跃 API。 */
 void graphicsApiCaptions() {
     Config config;
@@ -163,6 +189,7 @@ void gpuMetrics() {
 }
 }
 int main(int argc, char **argv) {
+    snapshotFreshness();
     graphicsApiCaptions();
     gpuMetrics();
     HudHistory history;

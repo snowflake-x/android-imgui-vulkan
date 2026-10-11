@@ -3,6 +3,25 @@
 #include <cmath>
 
 namespace vulkanscope::monitor {
+HudSnapshot DisplaySnapshot(const HudSnapshot &snapshot, std::int64_t now, int interval, bool stopped) {
+    auto result = snapshot;
+    const auto age = now - snapshot.capturedNs;
+    const auto fresh = static_cast<std::int64_t>(std::max(2000, interval * 2)) * 1000000;
+    if (stopped || snapshot.capturedNs <= 0 || age < 0 || age > 15000000000LL) {
+        result = {};
+        result.values = snapshot.values;
+        result.status = stopped ? "Capture stopped" : "Waiting for a fresh sample";
+        result.values["graphics_api"] = "N/A (" + result.status + ")";
+        result.values["graphics_api_status"] = stopped ? "cancelled" : "waiting";
+        result.values["graphics_api_details"] = result.status;
+        result.values["engine_name"] = "N/A (" + result.status + ")";
+        result.values["engine_source"] = result.values["engine_name"];
+        result.values.erase("engine_evidence");
+    } else if (age > fresh) {
+        result.status = "Last sample: " + Format(static_cast<double>(age) / 1000000000.0, 1) + "s ago; refreshing";
+    }
+    return result;
+}
 void HudHistory::reset() {
     identity_.clear();
     intervals_.clear();

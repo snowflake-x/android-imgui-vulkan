@@ -1,4 +1,5 @@
 #include "monitor/session.h"
+#include <algorithm>
 #include <chrono>
 #include <sstream>
 namespace vulkanscope::monitor {
@@ -48,18 +49,7 @@ bool Session::configureLocked(Config c) {
 }
 HudSnapshot Session::hud() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto result = hud_;
-    if (cancel_ || MonotonicNs() - result.capturedNs > std::max(5000, config_.interval * 3) * 1000000LL) {
-        result = {};
-        result.values = hud_.values;
-        result.status = cancel_ ? "Capture stopped" : "Waiting for a fresh sample";
-        result.values["graphics_api"] = "N/A (" + result.status + ")";
-        result.values["graphics_api_status"] = cancel_ ? "cancelled" : "waiting";
-        result.values["graphics_api_details"] = result.status;
-        result.values["engine_name"] = "N/A (" + result.status + ")";
-        result.values["engine_source"] = result.values["engine_name"];
-        result.values.erase("engine_evidence");
-    }
+    auto result = DisplaySnapshot(hud_, MonotonicNs(), config_.interval, cancel_);
     result.values.insert(gpu_.begin(), gpu_.end());
     return result;
 }
@@ -240,6 +230,7 @@ void Session::collect() {
     Collector collector(cancel_, {}, gpuTimingBlocked_, graphicsTracingBlocked_);
     HudHistory history;
     while (!cancel_) {
+        const auto cycleStart = std::chrono::steady_clock::now();
         const auto c = config();
         try {
             auto platform = platform_ ? platform_() : PlatformSample{};
@@ -291,7 +282,10 @@ void Session::collect() {
             setError(std::string("Native sampling error: ") + e.what());
         }
         std::unique_lock<std::mutex> lock(mutex_);
-        wake_.wait_for(lock, std::chrono::milliseconds(c.interval), [this] { return cancel_.load(); });
+        /** @brief interval 表示开始到开始的周期；慢采样只留短暂让步，不再额外叠加完整间隔。 */
+        const auto next = std::max(cycleStart + std::chrono::milliseconds(c.interval),
+                                   std::chrono::steady_clock::now() + std::chrono::milliseconds(50));
+        wake_.wait_until(lock, next, [this] { return cancel_.load(); });
     }
 }
 }
