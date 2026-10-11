@@ -29,17 +29,32 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
       - name: Build and lint
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug
-      - name: Package installable APK
+      - name: Prepare APK files and checksums
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/VulkanScope-debug.apk
           cp app/build/outputs/apk/release/app-release-unsigned.apk dist/VulkanScope-release-unsigned.apk
           cd dist
           sha256sum *.apk > SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
         with:
-          name: VulkanScope-APKs-${{ github.run_number }}
-          path: dist/
+          path: dist/VulkanScope-debug.apk
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload unsigned release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/VulkanScope-release-unsigned.apk
+          archive: false
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload checksums
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/SHA256SUMS.txt
+          archive: false
           retention-days: 30
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -55,10 +70,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download APK files
+        uses: actions/download-artifact@v8
         with:
-          name: VulkanScope-APKs-${{ github.run_number }}
+          pattern: VulkanScope-*.apk
+          merge-multiple: true
+          # APK files are ZIP containers; preserve them without extracting.
+          skip-decompress: true
           path: dist
+      - name: Download checksums
+        uses: actions/download-artifact@v8
+        with:
+          name: SHA256SUMS.txt
+          path: dist
+      - name: Verify APK checksums
+        working-directory: dist
+        run: sha256sum -c SHA256SUMS.txt
       - name: Publish tagged build
         env:
           GH_TOKEN: ${{ github.token }}
