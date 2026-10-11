@@ -262,20 +262,26 @@ void largeMappings() {
     const auto begin = mapping.find("1000-2000");
     const auto end = mapping.find("VSCOPE_GRAPHICS_TARGET_COMPLETE");
     const auto loaderLine = mapping.substr(begin, end - begin);
+    const std::string drivers =
+        "7000-8000 r-xp 0000 00:01 9 /vendor/lib64/egl/libGLESv2_adreno.so\n"
+        "8000-9000 r-xp 0000 00:01 10 /vendor/lib64/hw/vulkan.adreno.so\n"
+        "9000-a000 r-xp 0000 00:01 11 /system/lib64/libEGL.so (deleted)\n"
+        "a000-b000 r-xp 0000 00:01 12 /vendor/lib64/egl/libGLES_mali.so\n";
     {
         std::ofstream maps(path);
         for (int i = 0; i < 6000; ++i)
             maps << "3000-4000 r-xp 0000 08:01 1024 /data/app/com.example.game/lib/arm64/libUnity.so\n";
         maps << "1000-2000 r--p 0000 08:01 1024 /system/lib64/libEGL.so\n";
-        maps << loaderLine;
+        maps << loaderLine << drivers;
     }
     int calls = 0;
     Values diagnostics;
     const auto result = TraceGraphics("com.example.game", 0, cancel, [&](const std::string &script, int timeout) {
         syntax(script, timeout);
         if (++calls == 1) {
-            const auto start = script.find("sed -n '/^");
-            require(start != std::string::npos, "filter maps before bounded output capture");
+            const auto start = script.find("sed -n -E '/^");
+            require(start != std::string::npos, "filter maps before bounded output capture using explicit POSIX ERE");
+            require(script.find("\\|") == std::string::npos, "do not use GNU BRE alternation on Android");
             const auto stop = script.find(" || fail TARGET_MAPS_READ", start);
             require(stop != std::string::npos, "mapping read failure propagates");
             auto filter = script.substr(start, stop - start);
@@ -283,9 +289,9 @@ void largeMappings() {
             require(fileAt != std::string::npos, "filter reads target process mappings");
             filter.replace(fileAt, std::strlen("/proc/$p/maps"), Quote(path));
             const auto filtered = RunCommand({"sh", "-c", filter}, cancel, 1000);
-            require(filtered.success && filtered.output == loaderLine,
+            require(filtered.success && filtered.output == loaderLine + drivers,
                     "real sed filters a loader beyond 256 KiB and excludes nonexecutable/unrelated mappings");
-            return CommandResult{true, "PID=123\nSTART=456\nUID=10001\n" + filtered.output +
+            return CommandResult{true, "PID=123\nSTART=456\nUID=10001\n" + loaderLine +
                 "VSCOPE_GRAPHICS_TARGET_COMPLETE\n", {}};
         }
         if (calls == 2) return CommandResult{true, " thread-25 [000] .... 1.2: egl_swap: (0x1)\nTRACE_COMPLETE\n", {}};
@@ -424,8 +430,9 @@ void classifications() {
         ++calls;
         return CommandResult{true, mappedTarget("/system/lib64/libUnrelated.so", st), {}};
     }, &diagnostics);
-    require(calls == 1 && diagnostics.at("graphics_api_status") == "symbols_unavailable",
-            "no matching graphics mappings are distinct from tracefs failure");
+    require(calls == 2 && diagnostics.at("graphics_api_status") == "libraries_unavailable" &&
+            diagnostics.count("graphics_api_maps_sample") == 1,
+            "no matching graphics mappings retain a diagnostic map sample separately from symbol failure");
     calls = 0;
     TraceGraphics("com.example.game", 0, cancel, [&](const std::string &, int) {
         ++calls;

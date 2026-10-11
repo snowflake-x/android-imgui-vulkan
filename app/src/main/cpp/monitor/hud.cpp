@@ -105,6 +105,7 @@ std::string GraphicsApiCaption(const Config &config, const HudSnapshot &snapshot
         {"waiting", "API: waiting"},
         {"target_unavailable", "API: no target"},
         {"symbols_unavailable", "API: no symbols"},
+        {"libraries_unavailable", "API: no libraries"},
         {"trace_unavailable", "API: trace blocked"},
         {"probe_failed", "API: probe failed"},
         {"capture_failed", "API: capture failed"},

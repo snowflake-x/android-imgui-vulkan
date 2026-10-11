@@ -219,7 +219,7 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
         "case \"$u\" in ''|*[!0-9]*) continue;; esac; [ $((u / 100000)) -eq " + std::to_string(user) +
         " ] || continue; echo PID=$p; "
         "echo START=$(sed 's/.*) //' /proc/$p/stat | cut -d' ' -f20); "
-        "echo UID=$u; sed -n '/^[^ ]* [^ ]*x[^ ]* .*\\/\\(libEGL[^ ]*\\|libGLES[^ ]*\\|libvulkan\\|vulkan\\.[^ ]*\\)\\.so$/p' /proc/$p/maps || fail TARGET_MAPS_READ; "
+        "echo UID=$u; sed -n -E '/^[^[:space:]]+[[:space:]]+[^[:space:]]*x[^[:space:]]*[[:space:]].*\\/(libEGL[^[:space:]]*|libGLES[^[:space:]]*|libvulkan|vulkan\\.[^[:space:]]*)\\.so([[:space:]]+\\(deleted\\))?$/p' /proc/$p/maps || fail TARGET_MAPS_READ; "
         "echo VSCOPE_GRAPHICS_TARGET_COMPLETE; exit 0; done; fail TARGET_INACCESSIBLE", 2000);
     if (cancel) return finish("cancelled", "N/A (graphics tracing cancelled)");
     if (!target.success || target.truncated || !endsWith(target.output, TargetComplete))
@@ -333,9 +333,20 @@ std::string TraceGraphics(const std::string &package, int user, const std::atomi
         if (probes.size() == symbolsBefore) note(path + ": no additional supported dynamic function symbols\n");
     }
     if (probes.empty()) {
+        note("Target pid=" + std::to_string(pid) + "; matching library candidates=" + std::to_string(candidates) + "\n");
+        if (!candidates && !cancel) {
+            const auto sample = run(identity + " || exit 1; printf 'GRAPHICS_PATH_MATCHES\\n'; "
+                "sed -n '/[Ee][Gg][Ll]/p; /[Gg][Ll][Ee][Ss]/p; /[Vv][Uu][Ll][Kk][Aa][Nn]/p' " +
+                process + "/maps | head -c 8192; printf '\\nEXECUTABLE_MAPS_SAMPLE\\n'; "
+                "sed -n '/^[^ ]* [^ ]*x[^ ]* /p' " + process + "/maps | head -c 4096", 1500);
+            if (cancel) return finish("cancelled", "N/A (graphics tracing cancelled)");
+            if (diagnostics) (*diagnostics)["graphics_api_maps_sample"] = sample.success
+                ? sample.output.substr(0, 12400) : "Maps diagnostic read failed: " + sample.error;
+            note("No supported mappings matched; executable maps sample is in graphics_api_maps_sample\n");
+        }
         const auto why = unreadable ? "EGL/Vulkan libraries unreadable or mapping identity changed" :
                          candidates ? "no supported EGL/Vulkan function symbols" : "no mapped EGL/Vulkan loader libraries";
-        return finish("symbols_unavailable", "N/A (" + std::string(why) + ")");
+        return finish(candidates ? "symbols_unavailable" : "libraries_unavailable", "N/A (" + std::string(why) + ")");
     }
     note("Probe count: " + std::to_string(probes.size()) + "\n");
     const auto group = "vscope_" + std::to_string(getpid()) + "_" + std::to_string(MonotonicNs());
