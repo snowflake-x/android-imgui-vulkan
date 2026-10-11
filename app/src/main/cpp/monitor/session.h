@@ -21,6 +21,8 @@ class Session {
     void initialize(const std::string &directory, std::function<PlatformSample()> platform);
     Config config() const;
     bool configure(Config config);
+    /** @brief 在同一配置锁中应用字段修改，避免 Kotlin 表单覆盖并发 Root 授权的更新。 */
+    bool updateConfig(const std::function<void(Config &)> &change);
     std::string report() const;
     HudSnapshot hud() const;
     std::string system() const;
@@ -45,6 +47,7 @@ class Session {
 
   private:
     void collect();
+    bool configureLocked(Config config);
     void beginRootRequest(bool diagnostics);
     mutable std::mutex mutex_;
     std::mutex lifecycle_;

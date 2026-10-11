@@ -25,8 +25,17 @@ Config Session::config() const {
     return config_;
 }
 bool Session::configure(Config c) {
-    c.normalize();
     std::lock_guard<std::mutex> lock(mutex_);
+    return configureLocked(std::move(c));
+}
+bool Session::updateConfig(const std::function<void(Config &)> &change) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto config = config_;
+    change(config);
+    return configureLocked(std::move(config));
+}
+bool Session::configureLocked(Config c) {
+    c.normalize();
     std::string error;
     if (!SaveConfig(path_, c, error)) {
         report_ = error;

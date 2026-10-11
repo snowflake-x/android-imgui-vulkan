@@ -1,6 +1,6 @@
 # C++ 插件系统
 
-插件通过宿主管理的服务和类型事件扩展界面。加载建立一个作用域，卸载撤销该作用域的注册和资源。当前实现面向随应用编译的可信 C++ 插件，运行于 Android 渲染线程。
+插件通过宿主管理的服务和类型事件扩展界面。加载建立一个作用域，卸载撤销该作用域的注册和资源。当前实现面向随应用编译的可信 C++ 插件，运行于所属宿主线程。当前 Compose 管理器在 NativeManager 串行工作线程拥有运行时；保留的 ImGui 示例使用渲染线程。
 
 核心代码位于 [`plugin/runtime.h`](../app/src/main/cpp/plugin/runtime.h)；内置插件位于 [`features/builtin_plugins.cpp`](../app/src/main/cpp/features/builtin_plugins.cpp)，宿主接入位于 [`main.cpp`](../app/src/main/cpp/main.cpp)。
 
@@ -174,7 +174,7 @@ void AcquireBuffer(vulkanscope::plugin::Context& context) {
 
 当前没有 `dlopen` / `dlclose`、动态库 ABI、热替换二进制或不可信插件隔离。不要把生命周期卸载理解成动态代码卸载或安全沙箱。插件不得擅自保存宿主全局原始指针、启动无法取消和等待的 detached 线程，或在静态构造函数中注册行为。确需后台工作的扩展，应先增加宿主管理的取消与等待协议，再允许工作跨线程存在。
 
-所有运行时访问、服务借用和插件回调都必须发生在创建运行时的渲染线程。`clear()` 也必须在该线程且没有正在执行的事件、借用或生命周期操作时调用，违规操作抛出 `std::logic_error`。运行时析构同样要求空闲的所属线程，且必须早于宿主能力的销毁；这些前提应由宿主控制流程保证。
+所有运行时访问、服务借用和插件回调都必须发生在创建运行时的所属线程。`clear()` 也必须在该线程且没有正在执行的事件、借用或生命周期操作时调用，违规操作抛出 `std::logic_error`。运行时析构同样要求空闲的所属线程，且必须早于宿主能力的销毁；这些前提应由宿主控制流程保证。
 
 ## 宿主测试
 
@@ -191,3 +191,7 @@ ctest --test-dir /tmp/vulkanscope-plugin-tests --output-on-failure
 HUD 宿主 `HostPerformanceHud` 可提供可选的 `drawPreview` 同步回调，用于在当前 ImGui 帧绘制原生快照。插件不持有采集器或 GPU 资源；未提供预览时保留文本报告回退。预览与配置回调仅绘制，不启动采集或请求权限。
 
 分页与国际化见 [原生界面说明](native-ui.md)。宿主仅向当前主页发送绘制事件，切到插件列表不卸载实例；插件从 `RenderFrame.language` 读取本帧语言。
+
+## Miuix 管理宿主
+
+Android 入口现在使用 Kotlin Compose + Miuix。`manager/Manager` 在专用串行 JNI 工作线程创建和访问 Runtime，按持久化的插件开关加载设备、GPU 和 HUD 插件。配置表单通过经过校验的单字段命令更新 C++ Session；没有将采集搬入 Kotlin。旧的 `RenderFrame` / ImGui 宿主回调保留用于插件示例和宿主测试，当前管理器不发送 UI RenderFrame。HUD 由独立的 C++ Vulkan/ImGui 渲染器绘制。关闭管理 Activity 不停止用户开启的 HUD；显式停止或关闭 HUD 插件会结束采集。

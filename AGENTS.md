@@ -23,10 +23,10 @@ bool UpdateSurfaceSize(int width, int height);
 
 ## Android 桥接与原生实现
 
-- 界面、配置、指标采集和系统信息读取都放在 C++；界面使用 ImGui。不得重新引入 Kotlin 业务层、Android 配置表单或 TextView HUD。
-- Java 只承担 NativeActivity/Service 生命周期、系统权限和通知、WindowManager Surface 容器及回调桥接。公开方法和 JNI 入口保留 Javadoc，说明线程、取消与资源生命周期；不要在 Java Javadoc 中使用 `@brief`。
+- 应用内管理界面与配置表单使用 Kotlin Compose + Miuix；配置保存、指标采集、系统信息读取和 HUD 主逻辑保留 C++，HUD 使用 ImGui，不使用 TextView HUD。
+- Java 只承担 Service 生命周期、系统权限和通知、WindowManager Surface 容器及回调桥接。公开方法和 JNI 入口保留 Javadoc，说明线程、取消与资源生命周期；不要在 Java Javadoc 中使用 `@brief`。
 - 系统公共 API 缺少 NDK 对应项时，从 C++ 通过 JNI 调用；不要保存跨线程 JNIEnv 或局部引用。进程级 Application 全局引用由原生平台宿主持有。
-- 主界面与悬浮窗拥有独立 ImGui/Vulkan 上下文，访问 ImGui 必须持有宿主互斥锁并显式选择上下文。Surface 释放前取消并 join 渲染线程；等待 GPU 后销毁资源。
+- 悬浮窗拥有独立 ImGui/Vulkan 上下文，访问 ImGui 必须持有宿主互斥锁并显式选择上下文。Surface 释放前取消并 join 渲染线程；等待 GPU 后销毁资源。
 - 原生采集线程必须支持取消、超时、输出上限和 join；不得在渲染回调中执行 shell。按用户要求，主界面启动时默认在后台申请 root，允许关闭自动申请；必须验证 UID 0 后才开启 root 采样，拒绝/超时不循环重试，错误/缺失数据不得用推测值替代。
 
 ## C++ 插件扩展
@@ -34,7 +34,7 @@ bool UpdateSurfaceSize(int width, int height);
 - 模块化采用 `plugin/` 运行时与 `features/` 内置插件方案，接入方式和生命周期以 `docs/cpp-plugins.md` 为准；不要恢复已移除的 `modules/Module`、`ModuleContext` 或 `Dashboard` 方案。
 - 新功能通过 `PluginSpec` 显式声明 ID、依赖和 setup，并在宿主集中登记；新增实现须加入 CMake。禁止全局静态构造函数自动注册或绕过依赖访问全局服务。
 - 插件通过类型事件和受检查的服务句柄协作，状态归插件作用域所有。不得保存 `Context&`、跨帧事件引用、JNIEnv 或宿主原始句柄；服务借用只在同步回调中有效。
-- 运行时访问、事件回调、加载和卸载均在所属渲染线程执行；生命周期操作在帧边界、事件分发之外进行。Surface 重建保留宿主启停配置，插件缓存重新初始化。
+- 运行时访问、事件回调、加载和卸载均在所属串行宿主线程执行（管理界面为 NativeManager 工作线程）；生命周期操作在事件分发之外进行。Surface 重建保留宿主启停配置，插件缓存重新初始化。
 - 清理须支持部分初始化和事务回滚，保持 noexcept；先清空插件，再销毁宿主资源。涉及 GPU 资源时须先等待相关 GPU 工作结束。
 - 不在渲染回调中等待子进程或执行耗时采集；后台工作必须先具备宿主管理的取消与等待协议。root 请求由启动自动申请设置或用户手动重试触发，不能因绘制或刷新页面而重复申请。
 - 新增插件须补充用途、依赖、线程和资源生命周期说明，并运行 `app/src/main/cpp/tests` 的相关宿主测试；Android 生命周期、JNI 和 GPU 行为另做设备验证。

@@ -103,7 +103,17 @@ endforeach()
 add_executable(diagnostic_history_test diagnostic_history_test.cpp ../monitor/diagnostics.cpp)
 target_include_directories(diagnostic_history_test PRIVATE ..)
 
-foreach(test_target navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
+add_executable(manager_test manager_test.cpp ../manager/manager.cpp
+    ../features/builtin_plugins.cpp ../features/performance_hud.cpp ../plugin/runtime.cpp
+    ../ui/i18n.cpp ../ui/theme.cpp ../monitor/model.cpp ../monitor/process.cpp
+    ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp
+    ../monitor/diagnostics.cpp ../monitor/hud.cpp ../monitor/gpu_memory.cpp ../monitor/gpu_timing.cpp
+    ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
+    ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
+target_include_directories(manager_test PRIVATE .. ../vendor/imgui)
+target_link_libraries(manager_test PRIVATE Threads::Threads)
+
+foreach(test_target manager_test navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

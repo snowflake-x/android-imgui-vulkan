@@ -69,6 +69,7 @@ void ApplyMetricPreset(Config &config, MetricPreset preset) {
     }
 }
 void Config::normalize() {
+    managerPlugins &= 7;
     if (language != "system" && language != "en" && language != "zh-Hans") language = "system";
     if (interval != 500 && interval != 1000 && interval != 2000)
         interval = 1000;
@@ -95,13 +96,13 @@ bool SaveConfig(const std::string &path, Config c, std::string &error) {
     c.normalize();
     std::ofstream out(path + ".tmp", std::ios::trunc);
     out.imbue(std::locale::classic());
-    out << "VulkanScopeHUD 4\n"
+    out << "VulkanScopeHUD 5\n"
         << c.root << ' ' << c.interval << ' ' << c.textSize << ' ' << c.opacity << ' ' << c.corner << ' '
         << std::setprecision(17) << c.powerScale << '\n'
         << std::quoted(c.surface) << '\n'
         << std::quoted(c.powerPath) << '\n'
         << c.hudGraph << ' ' << c.hudExtras << '\n'
-        << std::quoted(c.language) << '\n' << c.autoRoot << '\n';
+        << std::quoted(c.language) << '\n' << c.autoRoot << '\n' << c.managerPlugins << '\n';
     for (const auto &id : c.order)
         out << id << ' ' << c.has(id) << '\n';
     out.close();
@@ -119,7 +120,7 @@ Config LoadConfig(const std::string &path) {
     in.imbue(std::locale::classic());
     std::string magic;
     int version;
-    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 4))
+    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 5))
         return c;
     if (!(in >> c.root >> c.interval >> c.textSize >> c.opacity >> c.corner >> c.powerScale >>
           std::quoted(c.surface) >> std::quoted(c.powerPath)))
@@ -128,6 +129,7 @@ Config LoadConfig(const std::string &path) {
         return Config{};
     if (version >= 3 && !(in >> std::quoted(c.language))) return Config{};
     if (version >= 4 && !(in >> c.autoRoot)) return Config{};
+    if (version >= 5 && !(in >> c.managerPlugins)) return Config{};
     c.order.clear();
     std::string id;
     bool enabled;

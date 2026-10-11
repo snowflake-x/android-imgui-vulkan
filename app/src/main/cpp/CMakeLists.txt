@@ -8,9 +8,7 @@ add_library(vulkanscope_plugins STATIC plugin/runtime.cpp)
 set_target_properties(vulkanscope_plugins PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(vulkanscope_plugins PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 set(IMGUI ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui)
-add_library(native_app_glue STATIC ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
-target_include_directories(native_app_glue PUBLIC ${ANDROID_NDK}/sources/android/native_app_glue)
-add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp features/performance_hud.cpp
+add_library(vulkanscope SHARED manager/manager.cpp features/builtin_plugins.cpp features/performance_hud.cpp
     monitor/hud.cpp monitor/hud_view.cpp monitor/model.cpp monitor/process.cpp monitor/collector.cpp monitor/graphics_trace.cpp monitor/session.cpp monitor/diagnostics.cpp monitor/settings_ui.cpp
     monitor/gpu_memory.cpp monitor/gpu_timing.cpp
     platform/android_bridge.cpp platform/overlay_renderer.cpp platform/system_fonts.cpp
@@ -19,5 +17,5 @@ add_library(vulkanscope SHARED main.cpp features/builtin_plugins.cpp features/pe
     ${IMGUI}/backends/imgui_impl_android.cpp ${IMGUI}/backends/imgui_impl_vulkan.cpp)
 target_include_directories(vulkanscope PRIVATE ${IMGUI} ${IMGUI}/backends)
 target_compile_definitions(vulkanscope PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
-target_link_libraries(vulkanscope PRIVATE vulkanscope_plugins native_app_glue android log vulkan dl)
-target_link_options(vulkanscope PRIVATE "-uANativeActivity_onCreate" "-Wl,-z,max-page-size=16384")
+target_link_libraries(vulkanscope PRIVATE vulkanscope_plugins android log vulkan dl)
+target_link_options(vulkanscope PRIVATE "-Wl,-z,max-page-size=16384")

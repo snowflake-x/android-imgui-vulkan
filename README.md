@@ -1,10 +1,10 @@
 # VulkanScope · Android ImGui Vulkan
 
-原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。界面、配置和采集均使用 **C++**，Java 仅保留 Android 生命周期桥接。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。主界面、HUD 配置和悬浮窗统一使用 ImGui 英文界面。
+原生 Android **Vulkan 1.0 + Dear ImGui** 系统监视器。主界面使用 **Kotlin Compose + Miuix**，配置保存、系统采集和 HUD 使用 **C++ + ImGui**。Android 8.0/API 26 起，支持 `arm64-v8a` 真机与支持 Vulkan 的 `x86_64` 模拟器。主界面提供主页、插件列表两栏，支持中文/英文、系统字体、深浅主题和惯性滚动。
 
 ## 功能
 
-- `frame-metrics`：实时本应用 FPS、平均帧耗时、最近 180 帧耗时曲线，FIFO 垂直同步。
+- Miuix 管理界面：大标题、圆角卡片、蓝色强调；配置操作通过串行 JNI 工作线程提交到 C++。
 - `performance-hud`：接入已有可逆 C++ 插件系统的前台应用监控，支持跨应用悬浮窗。用户启用 root 后，通过前台应用 SurfaceFlinger 的实际呈现时间戳统计 FPS、平均/P95 呈现间隔；系统不提供数据时显示 N/A，不用本应用帧率或刷新率代替。
 - HUD 支持 23 项指标的开关、排序和预设，采样间隔、字号、背景透明度、四角位置均可持久保存；可指定 Surface 和 CPU 功耗传感器。
 - 自动识别可读取的 Unity/Unreal 引擎进程及游戏版本。**第三方游戏的内部渲染分辨率需要经过验证的游戏/版本读取器；当前尚未提供王者荣耀、和平精英的读取器**，不会用屏幕尺寸冒充。详见[性能 HUD 使用说明](docs/performance-hud.md)和[引擎数据接入说明](docs/engine-resolution.md)。
@@ -29,24 +29,25 @@ GitHub 临时 runner 的调试签名可能变化，后续构建若提示签名�
 
 ## 本地构建
 
-使用最新 LTS **JDK 25**（CI 使用 Temurin 25）和 Android SDK 构建，首次构建需下载 Gradle/Android 插件。依赖版本：Gradle 9.1.0、AGP 8.13.2、SDK 35、NDK 28.0.13004108、CMake 3.22.1。
+使用最新 LTS **JDK 25**（CI 使用 Temurin 25）和 Android SDK 构建，首次构建需下载 Gradle/Android 插件。依赖版本：Gradle 9.1.0、AGP 8.13.2、SDK 36、NDK 28.0.13004108、CMake 3.22.1。
 
-JDK 25 用于运行 Gradle 和编译工具。为兼容 Android 的 D8/R8 工具链，Java 生命周期桥接的 JVM 字节码目标保留为 17；可用平台 API 仍受 Android SDK 和 `minSdk = 26` 限制，不代表支持全部 Java 25 API。Android Studio 的 Gradle JDK 也应选择 JDK 25。
+JDK 25 用于运行 Gradle 和编译工具（本地也可用 JDK 21；Miuix 的 Robolectric 页面测试需要 Java 21 或更新版本）。为兼容 Android 的 D8/R8 工具链，Java 生命周期桥接的 JVM 字节码目标保留为 17；可用平台 API 仍受 Android SDK 和 `minSdk = 26` 限制，不代表支持全部 Java 25 API。Android Studio 的 Gradle JDK 也应选择 JDK 25。
 
 ```sh
 export JAVA_HOME=/path/to/jdk-25
 export PATH="$JAVA_HOME/bin:$PATH"
-sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
+sdkmanager 'platforms;android-36' 'build-tools;35.0.0' 'ndk;28.0.13004108' 'cmake;3.22.1'
 export ANDROID_HOME=/path/to/android-sdk
 ./gradlew assembleDebug assembleRelease lintDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受支持；系统报告 DPI/温度节点的精度和可读性取决于设备厂商。FPS 为 ImGui 滚动平均，曲线是帧间隔，不是 GPU 时间戳测量。
+NDK 28 和链接器按 16 KiB 页大小构建。无 Vulkan 驱动的设备不受支持；系统报告 DPI/温度节点的精度和可读性取决于设备厂商。FPS 来自目标应用实际呈现；GPU 时间另由可用的内核事件采集，不以呈现间隔替代。
 
 ## 代码结构
 
-- `app/src/main/cpp/main.cpp`：NativeActivity、Vulkan、触摸输入、宿主面板与生命周期。
+- `app/src/main/java/dev/snowflake/vulkan/ManagerApp.kt`：Miuix 管理页面、配置表单和诊断。
+- `app/src/main/cpp/manager/`：串行宿主插件、配置命令与 JSON 快照。
 - `app/src/main/cpp/plugin/`：可逆插件内核，管理依赖、类型事件、服务与作用域资源。
 - `app/src/main/cpp/features/`：帧率、设备信息、GPU 信息插件；界面 **Plugins** 可独立启停。
 - `features/performance_hud.*`：性能插件面板与原生配置界面入口。

@@ -3,6 +3,7 @@
 #include "platform/system_fonts.h"
 #include "monitor/hud_view.h"
 #include "platform/overlay_renderer.h"
+#include "manager/manager.h"
 #include <android/log.h>
 #include <android/native_window_jni.h>
 #include <chrono>
@@ -12,6 +13,7 @@
 #include <sstream>
 #include <sys/system_properties.h>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 
 namespace vulkanscope {
@@ -62,11 +64,14 @@ jobject service(JNIEnv *e, const char *name) {
 std::string utf(JNIEnv *e, jstring value) {
     if (!value)
         return {};
-    const char *chars = e->GetStringUTFChars(value, nullptr);
-    if (!chars)
-        return {};
-    std::string text(chars);
-    e->ReleaseStringUTFChars(value, chars);
+    auto encoding = e->NewStringUTF("UTF-8");
+    auto data = static_cast<jbyteArray>(e->CallObjectMethod(
+        value, method(e, value, "getBytes", "(Ljava/lang/String;)[B"), encoding));
+    e->DeleteLocalRef(encoding);
+    if (!data || e->ExceptionCheck()) return {};
+    std::string text(static_cast<std::size_t>(e->GetArrayLength(data)), '\0');
+    e->GetByteArrayRegion(data, 0, static_cast<jsize>(text.size()), reinterpret_cast<jbyte *>(text.data()));
+    e->DeleteLocalRef(data);
     return text;
 }
 std::string property(const char *key) {
@@ -390,6 +395,68 @@ void HudAction(JNIEnv *env, jobject activity, int action) {
         env->CallVoidMethod(activity, id, action);
     if (exception(env))
         monitor::NativeSession().setError("Android lifecycle action failed");
+}
+namespace {
+/** @brief Kotlin 的进程级单线程调度器持有此宿主，JNI 不执行 ImGui 渲染。 */
+Manager &manager() {
+    static Manager value(monitor::NativeSession());
+    return value;
+}
+/** @brief 使用标准 UTF-8 字节数组避免 JNI Modified UTF-8 损坏系统字体支持的扩展字符。 */
+jbyteArray bytes(JNIEnv *env, const std::string &text) {
+    auto result = env->NewByteArray(static_cast<jsize>(text.size()));
+    if (result) env->SetByteArrayRegion(result, 0, static_cast<jsize>(text.size()), reinterpret_cast<const jbyte *>(text.data()));
+    return result;
+}
+void managerError(JNIEnv *env, const std::exception &error) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), error.what());
+}
+/** @brief 主界面显示硬件能力不再依赖创建 Vulkan 渲染 Surface。 */
+void readGpuProperties() {
+    VkInstance instance = VK_NULL_HANDLE;
+    VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    if (vkCreateInstance(&create, nullptr, &instance) != VK_SUCCESS) return;
+    uint32_t count = 0;
+    if (vkEnumeratePhysicalDevices(instance, &count, nullptr) == VK_SUCCESS && count > 0 && count <= 16) {
+        std::vector<VkPhysicalDevice> devices(count);
+        if (vkEnumeratePhysicalDevices(instance, &count, devices.data()) == VK_SUCCESS && count > 0) {
+            VkPhysicalDeviceProperties p{};
+            vkGetPhysicalDeviceProperties(devices.front(), &p);
+            monitor::NativeSession().gpu({{"gpu_model", p.deviceName}, {"gpu_driver", std::to_string(p.driverVersion)},
+                {"gpu_api", std::to_string(VK_VERSION_MAJOR(p.apiVersion)) + "." + std::to_string(VK_VERSION_MINOR(p.apiVersion)) + "." + std::to_string(VK_VERSION_PATCH(p.apiVersion))}});
+        }
+    }
+    vkDestroyInstance(instance, nullptr);
+}
+}
+extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_NativeManager_initialize(JNIEnv *e, jobject, jobject c, jstring path) {
+    try {
+        initialize(e, c, path);
+        (void)manager();
+        monitor::NativeSession().startSystemInfo();
+        monitor::NativeSession().requestStartupRoot();
+        readGpuProperties();
+    } catch (const std::exception &error) { managerError(e, error); }
+}
+extern "C" JNIEXPORT jbyteArray JNICALL Java_dev_snowflake_vulkan_NativeManager_snapshot(JNIEnv *e, jobject) {
+    try {
+        const auto language = ui::ResolveLanguage(monitor::NativeSession().config().language, ReadSystemLocale());
+        return bytes(e, manager().snapshot(language));
+    } catch (const std::exception &error) { managerError(e, error); return nullptr; }
+}
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_NativeManager_command(JNIEnv *e, jobject, jstring key, jstring value) {
+    try { return manager().command(utf(e, key), utf(e, value)); }
+    catch (const std::exception &error) { managerError(e, error); return false; }
+}
+extern "C" JNIEXPORT jbyteArray JNICALL Java_dev_snowflake_vulkan_NativeManager_diagnostic(JNIEnv *e, jobject, jstring package, jint user) {
+    try { return bytes(e, manager().diagnostic(utf(e, package), user)); }
+    catch (const std::exception &error) { managerError(e, error); return nullptr; }
+}
+extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_NativeManager_pause(JNIEnv *e, jobject) {
+    try {
+        monitor::NativeSession().shutdownDiagnostics();
+        monitor::NativeSession().stopSystemInfo();
+    } catch (const std::exception &error) { managerError(e, error); }
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_MainActivity_nativeInitialize(JNIEnv *e, jclass,
                                                                                           jobject c,
