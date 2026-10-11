@@ -83,6 +83,13 @@ class FrameStats {
     std::string key_;
     std::int64_t sample_ = 0, present_ = 0;
 };
+/** @brief 运行进程的引擎库证据；多个引擎同时出现时保留歧义。 */
+struct EngineIdentity {
+    std::string name = "Unknown";
+    std::string evidence;
+};
+/** @brief 按可执行映射的完整库文件名识别引擎，不用包名或任意字符串猜测。 */
+EngineIdentity IdentifyEngine(const std::string &maps);
 struct Telemetry {
     std::string engine, source;
     std::int64_t stamp = 0;

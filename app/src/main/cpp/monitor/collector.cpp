@@ -423,21 +423,60 @@ void Collector::presentation(const Config &c, const Foreground &foreground, Valu
                           : "N/A (" + failure + ")";
 }
 void Collector::engine(const Config &c, Values &v) {
-    if (!c.has("engine_resolution") && !c.has("engine_output") && !c.has("engine_source"))
+    if (!c.has("engine_name") && !c.has("engine_resolution") && !c.has("engine_output") && !c.has("engine_source"))
         return;
     auto unavailable = [&](const std::string &why) {
-        for (const auto *id : {"engine_resolution", "engine_output", "engine_source"})
+        for (const auto *id : {"engine_resolution", "engine_output"})
             v[id] = "N/A (" + why + ")";
     };
+    v["engine_name"] = "N/A (" + rootError_ + ")";
+    v["engine_source"] = v["engine_name"];
     if (!authorized_) {
         unavailable(rootError_);
         return;
     }
     if (v.find("foreground_user") == v.end()) {
+        v["engine_name"] = "N/A (Foreground package unavailable)";
+        v["engine_source"] = v["engine_name"];
         unavailable("Foreground package unavailable");
         return;
     }
     const auto package = v["foreground"], user = v["foreground_user"];
+    auto probe = root("for p in $(pidof " + Quote(package) + "); do "
+        "uid=$(sed -n 's/^Uid:[[:space:]]*\\([0-9]*\\).*/\\1/p' /proc/$p/status); "
+        "case \"$uid\" in ''|*[!0-9]*) continue;; esac; [ $((uid / 100000)) -eq " + user + " ] || continue; "
+        "name=$(tr '\\000' '\\n' < /proc/$p/cmdline | head -n 1); [ \"$name\" = " + Quote(package) + " ] || continue; "
+        "start=$(sed 's/.*) //' /proc/$p/stat | cut -d' ' -f20); [ -n \"$start\" ] || exit 1; "
+        "echo ENGINE_PID=$p; sed -n '/^[^ ]* [^ ]*x[^ ]* .*\\.so/p' /proc/$p/maps || exit 1; "
+        "[ \"$(sed 's/.*) //' /proc/$p/stat | cut -d' ' -f20)\" = \"$start\" ] || exit 1; "
+        "[ \"$(sed -n 's/^Uid:[[:space:]]*\\([0-9]*\\).*/\\1/p' /proc/$p/status)\" = \"$uid\" ] || exit 1; "
+        "[ \"$(tr '\\000' '\\n' < /proc/$p/cmdline | head -n 1)\" = \"$name\" ] || exit 1; "
+        "echo ENGINE_COMPLETE; exit 0; done; exit 1", 2000, 65536);
+    if (cancel_) return;
+    std::string engineSource;
+    const std::string complete = "ENGINE_COMPLETE\n";
+    const auto lineEnd = probe.output.find('\n');
+    const auto pid = probe.output.substr(std::min<std::size_t>(11, probe.output.size()), lineEnd == std::string::npos || lineEnd < 11 ? 0 : lineEnd - 11);
+    if (probe.success && !probe.truncated && probe.output.rfind("ENGINE_PID=", 0) == 0 &&
+        !pid.empty() && pid.find_first_not_of("0123456789") == std::string::npos &&
+        probe.output.size() >= complete.size() &&
+        probe.output.compare(probe.output.size() - complete.size(), complete.size(), complete) == 0) {
+        const auto identity = IdentifyEngine(probe.output);
+        v["engine_name"] = identity.name;
+        v["engine_evidence"] = identity.evidence.empty() ? "No recognized engine library in executable mappings" : identity.evidence;
+        engineSource = package + " / " + identity.name + " / pid=" + pid + " user=" + user + "\n" + v["engine_evidence"];
+    } else {
+        v["engine_name"] = "N/A (engine process inaccessible or changed)";
+        v["engine_evidence"] = probe.truncated ? "Engine mappings truncated" : "Engine process identity/read failed: " + probe.error;
+        engineSource = v["engine_name"];
+    }
+    if (c.has("engine_source") && !cancel_) {
+        const auto version = root("dumpsys package " + Quote(package) +
+            " | sed -n 's/^[[:space:]]*versionCode=\\([0-9]*\\).*/versionCode=\\1/p' | head -n 1", 1500);
+        if (version.success && !version.truncated) engineSource += "\n" + version.output;
+    }
+    v["engine_source"] = engineSource;
+    if (!c.has("engine_resolution") && !c.has("engine_output")) return;
     const auto internal = "/data/user/" + user + "/" + package + "/files/vulkanscope-render.json";
     const auto external =
         "/storage/emulated/" + user + "/Android/data/" + package + "/files/vulkanscope-render.json";
@@ -451,28 +490,6 @@ void Collector::engine(const Config &c, Values &v) {
     }
     if (result.output == "NO_REPORT") {
         unavailable("No compatible engine resolution reader");
-        auto probe =
-            root("for p in $(pidof " + Quote(package) +
-                 "); do "
-                 "uid=$(sed -n 's/^Uid:[[:space:]]*\\([0-9]*\\).*/\\1/p' /proc/$p/status); "
-                 "case \"$uid\" in ''|*[!0-9]*) continue;; esac; [ $((uid / 100000)) -eq " +
-                 user +
-                 " ] || continue; "
-                 "printf 'pid=%s user=%s\\n' \"$p\" " +
-                 user +
-                 "; head -c 1048576 /proc/$p/maps | grep -Eo '/lib(unity|UE4|Unreal)\\.so([[:space:]]|$)' | "
-                 "head -n 1; break; done; "
-                 "dumpsys package " +
-                 Quote(package) +
-                 " | sed -n 's/^[[:space:]]*versionCode=\\([0-9]*\\).*/versionCode=\\1/p' | head -n 1");
-        if (probe.success) {
-            std::string engine = probe.output.find("/libunity.so") != std::string::npos ? "Unity"
-                                 : probe.output.find("/libUE4.so") != std::string::npos ||
-                                         probe.output.find("/libUnreal.so") != std::string::npos
-                                     ? "Unreal"
-                                     : "Unknown";
-            v["engine_source"] = package + " / " + engine + " / " + probe.output;
-        }
         return;
     }
     std::string error;
@@ -481,9 +498,9 @@ void Collector::engine(const Config &c, Values &v) {
         unavailable(error);
         return;
     }
-    auto pid = std::to_string(report->pid);
-    auto process = root("head -c 256 /proc/" + pid + "/cmdline; printf '\\n'; sed -n '/^Uid:/p' /proc/" +
-                            pid + "/status",
+    auto reportPid = std::to_string(report->pid);
+    auto process = root("head -c 256 /proc/" + reportPid + "/cmdline; printf '\\n'; sed -n '/^Uid:/p' /proc/" +
+                            reportPid + "/status",
                         1500);
     auto name = process.output.substr(0, process.output.find_first_of(std::string("\0\n", 2)));
     std::smatch uid;
@@ -503,6 +520,10 @@ void Collector::engine(const Config &c, Values &v) {
     v["engine_output"] = report->outputWidth ? std::to_string(report->outputWidth) + " x " +
                                                    std::to_string(report->outputHeight) + " px"
                                              : "N/A (not reported by engine)";
+    if (v["engine_name"] == "Unknown" || v["engine_name"].rfind("N/A", 0) == 0) {
+        v["engine_name"] = report->engine + " (reported)";
+        v["engine_evidence"] = "Validated game telemetry: " + report->source;
+    }
     v["engine_source"] = report->engine + " / " + report->source + " (engine-reported)";
 }
 }

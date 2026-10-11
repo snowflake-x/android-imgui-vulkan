@@ -129,7 +129,7 @@ void DrawClassicHud(ImDrawList &draw, ImVec2 origin, const HudSize &size, const 
     if (config.hudExtras) {
         for (const auto &id : config.order) {
             if (!config.has(id) || id == "fps" || id == "frame_time" || id == "gpu_model" ||
-                id == "app_memory" || id == "gpu_time" || id == "gpu_memory")
+                id == "app_memory" || id == "gpu_time" || id == "gpu_memory" || id == "engine_name")
                 continue;
             const auto metric =
                 std::find_if(Metrics().begin(), Metrics().end(), [&](const auto &m) { return id == m.id; });

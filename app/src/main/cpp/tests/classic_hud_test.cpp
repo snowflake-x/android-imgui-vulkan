@@ -98,7 +98,14 @@ void gpuMetrics() {
     require(sample.gpu.current == .44 && sample.gpu.minimum == .40 && sample.gpu.maximum == .51 &&
             sample.gpuMb == 100.25 && !sample.fps.current, "GPU metrics survive unavailable Surface latency");
     require(sample.gpuGraph.empty(), "GPU batches must not become invented frame timings");
+    config.enabled["engine_name"] = true;
+    config.root = true;
+    sample.values["engine_name"] = "Unity";
     auto captions = HudCaptions(config, sample);
+    require(captions.back() == "Engine: Unity", "engine displayed independently of resolution");
+    config.root = false;
+    require(HudCaptions(config, sample).back() == "Engine: root OFF", "root optout immediately hides old engine");
+    config.root = true;
     require(captions[1] == frames.status && captions[2] == "GPU: ms/batch | []: KGSL shared MB",
             "GPU scope and memory sharing are explicit");
     values["gpu_time_unit"] = "ms/window";

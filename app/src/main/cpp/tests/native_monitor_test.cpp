@@ -102,6 +102,22 @@ std::string telemetry() {
     return R"({"schemaVersion":1,"packageName":"com.game.app","engine":"Unity","source":"pre-upscale","pid":123,"elapsedRealtimeMs":10000,"renderWidth":1280,"renderHeight":720,"outputWidth":1920,"outputHeight":1080})";
 }
 void engine() {
+    auto mapping = [](const std::string &library) {
+        return "1000-2000 r-xp 00000000 00:01 123 /data/app/game/lib/arm64/" + library + "\n";
+    };
+    for (const auto &entry : {std::pair{"libunity.so", "Unity"}, {"libUE4.so", "Unreal Engine 4"},
+                             {"libUnreal.so", "Unreal Engine"}, {"libgodot_android.so", "Godot"},
+                             {"libcocos2dcpp.so", "Cocos2d-x"}, {"libdmengine.so", "Defold"}}) {
+        const auto engine = IdentifyEngine(mapping(entry.first));
+        require(engine.name == entry.second && engine.evidence.find(entry.first) != std::string::npos,
+                "identify engine with exact loaded library evidence");
+    }
+    require(IdentifyEngine(mapping("libunity.so.bak")).name == "Unknown", "suffix lookalikes are not engines");
+    require(IdentifyEngine("com.tencent.tmgp.sgame libunity.so").name == "Unknown", "package names and arbitrary text are not engine evidence");
+    require(IdentifyEngine("1000-2000 r--p 0000 00:01 1 /data/libunity.so\n").name == "Unknown", "nonexecutable mapping ignored");
+    require(IdentifyEngine(mapping("base.apk")).name == "Unknown", "APK mapping alone cannot identify engine");
+    require(IdentifyEngine(mapping("libunity.so") + mapping("libUE4.so")).name.find("multiple libraries") != std::string::npos,
+            "conflicting engine libraries preserve ambiguity");
     std::string error;
     auto json = telemetry();
     auto t = ParseTelemetry(json, "com.game.app", 10001, error);
@@ -122,6 +138,58 @@ void engine() {
     bad = json;
     bad.replace(bad.find("pre-upscale"), 11, "pre\\u002Dupscale");
     require(ParseTelemetry(bad, "com.game.app", 10001, error).has_value(), "JSON escaped ASCII accepted");
+}
+void engineCollection() {
+    std::atomic<bool> cancel{false};
+    Config config;
+    for (auto &field : config.enabled) field.second = false;
+    config.root = true;
+    config.enabled["engine_name"] = true;
+    const auto directory = std::filesystem::path("/tmp/vscope-engine-" + std::to_string(getpid()));
+    std::filesystem::create_directories(directory / "123");
+    const auto process = directory / "123";
+    std::ofstream(process / "status") << "Uid:\t1010001 1010001 1010001 1010001\n";
+    std::ofstream(process / "cmdline", std::ios::binary) << "com.game.app" << '\0';
+    std::string stat = "123 (game process) S";
+    for (int i = 0; i < 18; ++i) stat += " 0";
+    std::ofstream(process / "stat") << stat << " 456\n";
+    std::ofstream(process / "maps") << "1000-2000 r-xp 0000 00:01 1 /data/app/game/lib/arm64/libunity.so\n";
+    bool truncated = false, fail = false;
+    int probes = 0;
+    Collector collector(cancel, [&](const std::string &script, int timeout) {
+        if (script == "id -u") return CommandResult{true, "0\n", ""};
+        if (script.find("dumpsys activity activities") != std::string::npos)
+            return CommandResult{true, "ResumedActivity: ActivityRecord{x u10 com.game.app/.Main}", ""};
+        require(script.find("ENGINE_COMPLETE") != std::string::npos, "engine identification does not depend on telemetry or API tracing");
+        ++probes;
+        std::string command = script;
+        std::size_t at = 0;
+        while ((at = command.find("/proc/", at)) != std::string::npos) {
+            command.replace(at, 6, directory.string() + "/");
+            at += directory.string().size() + 1;
+        }
+        auto result = RunCommand({"sh", "-c", "pidof() { echo 123; }; " + command}, cancel, timeout);
+        if (truncated) result.truncated = true;
+        if (fail) result.success = false;
+        return result;
+    });
+    auto values = collector.sample(config);
+    require(probes == 1 && values["engine_name"] == "Unity" && values["engine_source"].find("pid=123 user=10") != std::string::npos,
+            "real root script identifies foreground engine in correct Android user");
+    require(values["engine_evidence"].find("libunity.so") != std::string::npos, "report exact engine evidence");
+    truncated = true;
+    require(collector.sample(config)["engine_name"].find("N/A") == 0, "truncated read cannot preserve old engine");
+    truncated = false; fail = true;
+    require(collector.sample(config)["engine_name"].find("N/A") == 0, "failed command cannot confirm engine");
+    fail = false;
+    std::ofstream(process / "maps") << "1000-2000 r-xp 0000 00:01 1 /data/app/game/base.apk\n";
+    require(collector.sample(config)["engine_name"] == "Unknown", "no known library remains unknown");
+    std::ofstream(process / "status") << "Uid:\t10001 10001 10001 10001\n";
+    require(collector.sample(config)["engine_name"].find("N/A") == 0, "another Android user's process is rejected");
+    config.root = false;
+    const auto before = probes;
+    require(collector.sample(config)["engine_name"] == "N/A (Root disabled)" && probes == before, "root optout stops engine probe");
+    std::filesystem::remove_all(directory);
 }
 void config() {
     const auto path = "/tmp/vulkanscope-config-" + std::to_string(getpid());
@@ -477,6 +545,7 @@ void lifecycle() {
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     session.stop();
     require(calls == 1 && !session.running(), "single worker, interruptible sleep and stop");
+    require(session.hud().values.at("engine_name") == "N/A (Capture stopped)", "stopped capture hides stale engine identity");
     require(session.hud().values.at("graphics_api_status") == "cancelled",
             "a stopped HUD cannot display an earlier graphics API as current");
     auto before = calls.load();
@@ -496,6 +565,7 @@ int main() {
         identity();
         units();
         engine();
+        engineCollection();
         config();
         presets();
         processes();

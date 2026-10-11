@@ -1,10 +1,10 @@
 # 前台游戏的引擎内部渲染分辨率
 
-性能 HUD 使用现有插件框架启停，`engine_resolution`、`engine_output`、`engine_source` 可以分别显示、隐藏和排序。**屏幕像素、Surface/窗口大小、交换链大小都不能证明游戏的内部渲染分辨率**。例如游戏先以 1280 × 720 渲染、再升采样到 1920 × 1080，内部尺寸必须显示前者。
+性能 HUD 使用现有插件框架启停，`engine_name`（游戏引擎）、`engine_resolution`、`engine_output`、`engine_source` 可以分别显示、隐藏和排序。**屏幕像素、Surface/窗口大小、交换链大小都不能证明游戏的内部渲染分辨率**。例如游戏先以 1280 × 720 渲染、再升采样到 1920 × 1080，内部尺寸必须显示前者。
 
 ## 已安装的第三方游戏
 
-开启 root 采集后，自动根据前台包名、Android 用户和进程查询引擎共享库：`libunity.so` 识别为 Unity，`libUE4.so` / `libUnreal.so` 识别为 Unreal；同时读取安装包的 `versionCode`。支持按《王者荣耀》`com.tencent.tmgp.sgame` 和《和平精英》`com.tencent.tmgp.pubgmhd` 的包名定位进程，**名称本身不作为引擎类型证据**。没有读取到引擎库时显示 Unknown。
+开启 root 采集后，自动根据前台包名、Android 用户和进程查询引擎共享库：`libunity.so` 识别为 Unity，`libUE4.so` / `libUnreal.so` 识别为 Unreal Engine 4 / Unreal Engine；另支持 Godot、Cocos 系列、Defold 的特征库。`engine_name` 默认开启，在 HUD 底部独立显示，主页报告和诊断也显示名称；`engine_evidence` 记录完整映射路径，不依赖图形 API 跟踪或游戏遥测。进程读取前后验证 UID、包名和启动时间，截断、换进程和读取失败均不报告已确认引擎；多个特征库同时出现时保留歧义。启用 `engine_source` 时同时读取安装包的 `versionCode`。支持按《王者荣耀》`com.tencent.tmgp.sgame` 和《和平精英》`com.tencent.tmgp.pubgmhd` 的包名定位进程，**名称本身不作为引擎类型证据**。没有读取到引擎库时显示 Unknown。
 
 当前实现自动识别进程、引擎和游戏版本，并允许在 C++ 采集器中扩展按游戏版本验证的读取器；**尚未提供这两个游戏的内部渲染分辨率读取器**。因此只有识别到引擎时，内部尺寸仍会明确显示 `N/A (no compatible ... resolution reader)`。这不是已完成对任意 Unity/UE 游戏的内部尺寸读取。
 

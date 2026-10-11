@@ -159,6 +159,7 @@ constexpr Entry entries[] = {
     {"Display refresh", "屏幕刷新率"},
     {"Engine render resolution", "引擎渲染分辨率"},
     {"Engine output resolution", "引擎输出分辨率"},
+    {"Game engine", "游戏引擎"},
     {"Engine source", "引擎数据来源"},
     {"System font", "系统字体"},
     {"System font fallback", "系统字体不可用，使用回退字体"},

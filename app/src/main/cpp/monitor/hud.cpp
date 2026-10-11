@@ -124,7 +124,7 @@ std::string GraphicsApiCaption(const Config &config, const HudSnapshot &snapshot
     return api == "Vulkan" || api == "OpenGL ES" || api == "OpenGL ES + Vulkan"
                ? api : "API: unavailable";
 }
-std::array<std::string, 3> HudCaptions(const Config &config, const HudSnapshot &snapshot) {
+std::vector<std::string> HudCaptions(const Config &config, const HudSnapshot &snapshot) {
     const auto foreground = snapshot.values.find("foreground");
     const auto target = foreground == snapshot.values.end() || foreground->second.rfind("N/A", 0) == 0
                             ? "unavailable" : foreground->second;
@@ -138,12 +138,17 @@ std::array<std::string, 3> HudCaptions(const Config &config, const HudSnapshot &
             gpuUnit = "ms/" + Format(*duration, 0) + "ms";
         gpuUnit += " (UID)";
     }
-    std::array<std::string, 3> result{
+    std::vector<std::string> result{
         "App: " + target, state,
         std::string("GPU: ") + (!config.has("gpu_time") ? "OFF"
                                 : snapshot.gpu.current ? gpuUnit : "unavailable") +
             " | []: " + (!config.has("gpu_memory") ? "OFF"
                           : snapshot.gpuMb ? "KGSL shared MB" : "unavailable")};
+    if (config.has("engine_name")) {
+        const auto engine = snapshot.values.find("engine_name");
+        result.emplace_back("Engine: " + (!config.root ? std::string{"root OFF"}
+            : engine == snapshot.values.end() ? "unavailable" : engine->second));
+    }
     for (auto &caption : result)
         std::replace_if(caption.begin(), caption.end(),
                         [](char ch) { return ch == '\n' || ch == '\r' || ch == '\t'; }, ' ');
@@ -154,11 +159,11 @@ HudSize MeasureHud(const Config &config, float fontSize, float maxWidth, float m
     if (config.hudExtras) {
         for (const auto &id : config.order)
             if (config.has(id) && id != "fps" && id != "frame_time" && id != "gpu_model" &&
-                id != "app_memory" && id != "gpu_time" && id != "gpu_memory")
+                id != "app_memory" && id != "gpu_time" && id != "gpu_memory" && id != "engine_name")
                 rows += 0.7f;
     }
     const float unitsWide = 18.8f;
-    const float unitsHigh = 0.7f + rows * 1.23f + (config.hudGraph ? 3.6f : 0.0f) + 1.9f;
+    const float unitsHigh = 0.7f + rows * 1.23f + (config.hudGraph ? 3.6f : 0.0f) + 1.9f + (config.has("engine_name") ? .7f : 0.0f);
     fontSize = std::max(1.0f, std::min({fontSize, maxWidth / unitsWide, maxHeight / unitsHigh}));
     return {std::min(maxWidth, unitsWide * fontSize), std::min(maxHeight, unitsHigh * fontSize), fontSize};
 }

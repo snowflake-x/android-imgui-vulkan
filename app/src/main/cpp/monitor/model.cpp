@@ -13,6 +13,43 @@
 #include <time.h>
 
 namespace vulkanscope::monitor {
+EngineIdentity IdentifyEngine(const std::string &maps) {
+    EngineIdentity result;
+    std::set<std::string> names, evidence;
+    std::istringstream lines(maps);
+    std::string line;
+    while (std::getline(lines, line)) {
+        std::istringstream row(line);
+        std::string range, permissions, offset, device, inode, path;
+        if (!(row >> range >> permissions >> offset >> device >> inode >> path) ||
+            permissions.find('x') == std::string::npos || path.empty() || path.front() != '/') continue;
+        const auto library = path.substr(path.rfind('/') + 1);
+        const std::pair<const char *, const char *> signatures[] = {
+            {"libunity.so", "Unity"}, {"libUE4.so", "Unreal Engine 4"},
+            {"libUnreal.so", "Unreal Engine"}, {"libgodot_android.so", "Godot"},
+            {"libcocos2dcpp.so", "Cocos2d-x"}, {"libcocos2djs.so", "Cocos2d-JS"},
+            {"libcocos.so", "Cocos"}, {"libdmengine.so", "Defold"}
+        };
+        for (const auto &signature : signatures) {
+            if (library != signature.first) continue;
+            names.insert(signature.second);
+            evidence.insert(path);
+        }
+    }
+    if (!names.empty()) {
+        result.name.clear();
+        for (const auto &name : names) {
+            if (!result.name.empty()) result.name += " + ";
+            result.name += name;
+        }
+        if (names.size() > 1) result.name += " (multiple libraries)";
+    }
+    for (const auto &path : evidence) {
+        if (result.evidence.size() >= 2048) break;
+        result.evidence += path.substr(0, 2048 - result.evidence.size()) + "\n";
+    }
+    return result;
+}
 const std::vector<Metric> &Metrics() {
     static const std::vector<Metric> value = {{"foreground", "Foreground", true},
                                               {"fps", "Foreground FPS", true},
@@ -38,6 +75,7 @@ const std::vector<Metric> &Metrics() {
                                               {"thermal", "Thermal state", false},
                                               {"display_resolution", "Display resolution", false},
                                               {"display_refresh", "Display refresh", false},
+                                              {"engine_name", "Game engine", true},
                                               {"engine_resolution", "Engine render size", true},
                                               {"engine_output", "Engine output size", false},
                                               {"engine_source", "Engine source", false}};
@@ -60,7 +98,7 @@ void ApplyMetricPreset(Config &config, MetricPreset preset) {
         config.enabled[id] = true;
     if (preset == MetricPreset::Game) {
         for (const char *id : {"foreground", "frame_p95", "fps_source", "engine_resolution",
-                               "engine_source", "battery_temp"})
+                               "engine_source", "engine_name", "battery_temp"})
             config.enabled[id] = true;
     } else {
         for (const char *id : {"cpu_freq", "cpu_load", "cpu_power", "gpu_freq", "gpu_load", "memory",

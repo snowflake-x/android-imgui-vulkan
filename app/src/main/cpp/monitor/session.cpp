@@ -56,6 +56,9 @@ HudSnapshot Session::hud() const {
         result.values["graphics_api"] = "N/A (" + result.status + ")";
         result.values["graphics_api_status"] = cancel_ ? "cancelled" : "waiting";
         result.values["graphics_api_details"] = result.status;
+        result.values["engine_name"] = "N/A (" + result.status + ")";
+        result.values["engine_source"] = result.values["engine_name"];
+        result.values.erase("engine_evidence");
     }
     result.values.insert(gpu_.begin(), gpu_.end());
     return result;
