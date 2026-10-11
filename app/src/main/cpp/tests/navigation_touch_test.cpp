@@ -1,5 +1,6 @@
 #include "imgui.h"
 #include "ui/navigation.h"
+#include "ui/theme.h"
 #include <cmath>
 #include <stdexcept>
 #include <iostream>
@@ -11,6 +12,7 @@ void require(bool value, const char *message) {
 }
 int main() {
     ImGui::CreateContext();
+    ApplyTheme();
     auto &io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.DisplaySize = ImVec2(420, 800);
@@ -19,7 +21,8 @@ int main() {
     io.Fonts->Build();
     Navigation navigation;
     float scroll = 0, maxScroll = 0, slider = .5f;
-    ImVec2 button{}, sliderPos{};
+    ImVec2 button{}, sliderPos{}, togglePos{};
+    bool enabled = false;
     int clicks = 0;
     bool resetScroll = false;
     auto frame = [&] {
@@ -30,6 +33,7 @@ int main() {
         auto content = [&] {
             scroll = ImGui::GetScrollY(); maxScroll = ImGui::GetScrollMaxY();
             if (resetScroll) ImGui::SetScrollY(0);
+            Card card("test-card");
             if (ImGui::Button("Action", ImVec2(180, 60))) ++clicks;
             const auto a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
             button = ImVec2((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -37,6 +41,9 @@ int main() {
             ImGui::SliderFloat("Value", &slider, 0, 1);
             const auto c = ImGui::GetItemRectMin(), d = ImGui::GetItemRectMax();
             sliderPos = ImVec2(c.x + 100, (c.y + d.y) / 2);
+            Toggle("Enabled", &enabled);
+            const auto t = ImGui::GetItemRectMin(), u = ImGui::GetItemRectMax();
+            togglePos = ImVec2((t.x + u.x) / 2, (t.y + u.y) / 2);
             for (int i = 0; i < 100; ++i) ImGui::Text("Content row %d", i);
         };
         DrawPages(navigation, Language::English, content, content);
@@ -74,6 +81,12 @@ int main() {
         const auto knob = sliderPos;
         down(knob); position(ImVec2(knob.x + 55, knob.y)); up();
         require(slider > .65f && scroll == 0, "slider retains horizontal interaction");
+        down(togglePos); up();
+        require(enabled, "themed toggle responds to a tap");
+        const auto toggleStart = togglePos;
+        down(toggleStart); position(ImVec2(toggleStart.x, toggleStart.y - 60)); up();
+        require(enabled && scroll > 40, "drag on themed toggle scrolls without changing plugin state");
+        top();
         down(button); CancelPageTouch(navigation); frame(); frame();
         require(clicks == 1 && !navigation.touch.pending, "system cancellation does not activate a button");
         io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);

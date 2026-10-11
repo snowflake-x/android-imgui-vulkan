@@ -1,4 +1,5 @@
 #include "ui/widgets.h"
+#include "ui/theme.h"
 #include "ui/navigation.h"
 #include "platform/system_fonts.h"
 #include "monitor/hud_view.h"
@@ -167,16 +168,7 @@ static void initialize() {
     uiScale = scale;
     systemLocale = vulkanscope::ReadSystemLocale();
     loadFonts();
-    ImGui::StyleColorsDark();
-    auto& style = ImGui::GetStyle();
-    style.WindowRounding = 0; style.FrameRounding = 3;
-    style.WindowPadding = ImVec2(14, 14); style.ItemSpacing = ImVec2(10, 10);
-    style.ScaleAllSizes(scale);
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.035f, 0.035f, 0.04f, 1);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.19f, 0.21f, 1);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.15f, 0.16f, 0.18f, 1);
-    style.Colors[ImGuiCol_CheckMark] = ImVec4(0.59f, 0.85f, 0.67f, 1);
-    style.Colors[ImGuiCol_PlotLines] = ImVec4(0.38f, 0.62f, 0.83f, 1);
+    vulkanscope::ui::ApplyTheme(scale);
     ImGui_ImplAndroid_Init(app->window);
     ImGui_ImplVulkan_InitInfo init{};
     init.ApiVersion = VK_API_VERSION_1_0;
@@ -236,8 +228,8 @@ static void pluginControls() {
 
     for (auto& feature : featureSettings) {
         bool enabled = plugins->isLoaded(feature.id);
-        ImGui::PushID(feature.id);
-        if (ImGui::Checkbox(Label(language, feature.label).c_str(), &enabled)) {
+        vulkanscope::ui::Card card(feature.id);
+        if (vulkanscope::ui::Toggle(Label(language, feature.label).c_str(), &enabled)) {
             /**
              * @brief 用户禁用立即停止宿主会话，避免下帧前 Surface 销毁丢失停用意图。
              * @note 这里已退出插件事件分发；普通插件清理只释放界面缓存和监听。
@@ -248,8 +240,6 @@ static void pluginControls() {
         }
         ImGui::TextWrapped("%s", Text(language, (std::string(feature.label) + " description").c_str()));
         ImGui::TextDisabled("%s", Text(language, enabled ? "Enabled" : "Disabled"));
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-        ImGui::PopID();
     }
     if (!pluginError.empty()) ImGui::TextWrapped("%s", pluginError.c_str());
 }
@@ -268,13 +258,18 @@ static void panel() {
     auto config = vulkanscope::monitor::NativeSession().config();
     language = vulkanscope::ui::ResolveLanguage(config.language, systemLocale);
     vulkanscope::ui::DrawPages(navigation, language, [&] {
-        const char *languages[] = {Text(language, "Follow system"), "English", "简体中文"};
-        int selection = config.language == "en" ? 1 : config.language == "zh-Hans" ? 2 : 0;
-        if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Language").c_str(), &selection, languages, 3)) {
-            config.language = selection == 1 ? "en" : selection == 2 ? "zh-Hans" : "system";
-            if (vulkanscope::monitor::NativeSession().configure(config)) reloadFonts = true;
+        {
+            vulkanscope::ui::Card card("interface");
+            ImGui::TextUnformatted(Text(language, "Interface"));
+            ImGui::Separator();
+            const char *languages[] = {Text(language, "Follow system"), "English", "简体中文"};
+            int selection = config.language == "en" ? 1 : config.language == "zh-Hans" ? 2 : 0;
+            if (ImGui::Combo(vulkanscope::ui::FieldLabel(language, "Language").c_str(), &selection, languages, 3)) {
+                config.language = selection == 1 ? "en" : selection == 2 ? "zh-Hans" : "system";
+                if (vulkanscope::monitor::NativeSession().configure(config)) reloadFonts = true;
+            }
+            ImGui::TextDisabled("%s", Text(language, systemFonts->description().empty() ? "System font fallback" : "System font"));
         }
-        ImGui::TextDisabled("%s", Text(language, systemFonts->description().empty() ? "System font fallback" : "System font"));
     plugins->emit(vulkanscope::RenderFrame{
         io.DeltaTime, io.Framerate, ImGui::GetTime(), window.Width, window.Height,
         properties.deviceName, properties.apiVersion, properties.driverVersion,
@@ -284,6 +279,7 @@ static void panel() {
         rootReport = vulkanscope::monitor::NativeSession().rootReport();
         nextRootRefresh = ImGui::GetTime() + 1.0;
     }
+    vulkanscope::ui::Card rootCard("root-diagnostics");
     if (ImGui::CollapsingHeader(Label(language, "Optional root diagnostics").c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextWrapped("%s", Text(language, "Requires an existing su provider (e.g. Magisk). Grant access on your device. Reads kernel, CPU, memory, SELinux and thermal data."));
         if (ImGui::Button(Label(language, "Request root / refresh").c_str(), ImVec2(-1, ImGui::GetFontSize()*2.5f))) {
@@ -330,7 +326,7 @@ static void render() {
     VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     check(vkBeginCommandBuffer(frame.CommandBuffer, &begin));
-    VkClearValue clear{{{0.035f, 0.045f, 0.065f, 1.0f}}};
+    VkClearValue clear{{{0.035f, 0.047f, 0.067f, 1.0f}}};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = window.RenderPass; pass.framebuffer = frame.Framebuffer;
     pass.renderArea.extent = {static_cast<uint32_t>(window.Width), static_cast<uint32_t>(window.Height)};
@@ -367,7 +363,7 @@ static void command(android_app*, int32_t cmd) {
     if (cmd == APP_CMD_CONFIG_CHANGED) {
         if (ready) vulkanscope::ui::CancelPageTouch(navigation);
         const float scale = std::max(1.0f, AConfiguration_getDensity(app->config) / 160.0f) * vulkanscope::ReadSystemFontScale();
-        if (ready) ImGui::GetStyle().ScaleAllSizes(scale / uiScale);
+        if (ready) vulkanscope::ui::ApplyTheme(scale);
         uiScale = scale;
         systemLocale = vulkanscope::ReadSystemLocale();
         reloadFonts = true;

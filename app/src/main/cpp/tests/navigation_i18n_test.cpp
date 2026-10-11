@@ -4,6 +4,9 @@
 #include "platform/system_fonts.h"
 #include "ui/font_catalog.h"
 #include "ui/navigation.h"
+#include "ui/theme.h"
+#include "features/builtin_plugins.h"
+#include "features/performance_hud.h"
 #include "ui/widgets.h"
 #include <cmath>
 #include <stdexcept>
@@ -36,6 +39,11 @@ int main(int argc, char **argv) {
             "system family, weight, locale and TTC index");
     require(ParseFontConfig("<broken>", "/system/fonts", "en").empty(), "malformed XML rejected");
     auto *context = ImGui::CreateContext();
+    ApplyTheme(2);
+    const float scaledPadding = ImGui::GetStyle().WindowPadding.x;
+    ApplyTheme(2);
+    require(ImGui::GetStyle().WindowPadding.x == scaledPadding, "theme scaling is idempotent");
+    ApplyTheme();
     auto &io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.DisplaySize = ImVec2(420, 800);
@@ -101,6 +109,26 @@ int main(int argc, char **argv) {
     require(state.selected == Page::Plugins, "rotation and language preserve selection");
     if (argc > 1) {
         io.DisplaySize = ImVec2(420, 800);
+        plugin::Runtime previewPlugins;
+        RegisterBuiltinPlugins(previewPlugins, std::make_shared<HostReports>([] {
+            return "Device: Android\nDisplay: 1440 x 3200\nRefresh: 120 Hz";
+        }));
+        RegisterPerformanceHudPlugin(previewPlugins, std::make_shared<HostPerformanceHud>(
+            [] { return "Preview sample"; }, [] {}, [] {}, [] {}, [] {
+                monitor::Config config;
+                monitor::HudSnapshot sample;
+                sample.values = {{"gpu_model", "Adreno 750"}, {"display_resolution", "1440 x 3200 px"},
+                                 {"display_refresh", "120 Hz"}};
+                sample.fps = {60, 55, 60};
+                sample.present = {16.67, 16.67, 18.18};
+                sample.status.clear();
+                const auto size = monitor::MeasureHud(config, 18, ImGui::GetContentRegionAvail().x, 1000);
+                monitor::DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size,
+                                        config, sample);
+                ImGui::Dummy(ImVec2(size.width, size.height));
+            }));
+        for (const char *id : {"frame-metrics", "device-info", "gpu-info", "performance-hud"})
+            previewPlugins.load(id);
         auto preview = [&](Page page, const char *suffix) {
             state.selected = page;
             ImGui::NewFrame();
@@ -110,41 +138,35 @@ int main(int argc, char **argv) {
             DrawPages(
                 state, Language::Chinese,
                 [&] {
-                    const char *languages[] = {"跟随系统", "English", "简体中文"};
-                    int choice = 0;
-                    ImGui::Combo(FieldLabel(Language::Chinese, "Language").c_str(), &choice, languages, 3);
-                    ImGui::SeparatorText("前台应用性能悬浮窗");
-                    ImGui::Button("配置");
-                    ImGui::SameLine();
-                    ImGui::Button("启动悬浮窗");
-                    ImGui::SameLine();
-                    ImGui::Button("停止悬浮窗");
-                    monitor::Config config;
-                    monitor::HudSnapshot sample;
-                    sample.values = {{"gpu_model", "Adreno 750"},
-                                     {"display_resolution", "1440 x 3200 px"},
-                                     {"display_refresh", "120 Hz"}};
-                    sample.fps = {60, 55, 60};
-                    sample.present = {16.67, 16.67, 18.18};
-                    sample.status.clear();
-                    const auto size = monitor::MeasureHud(config, 18, ImGui::GetContentRegionAvail().x, 1000);
-                    monitor::DrawClassicHud(*ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), size,
-                                            config, sample);
-                    ImGui::Dummy(ImVec2(size.width, size.height));
-                    ImGui::SeparatorText("屏幕与设备");
-                    ImGui::TextUnformatted("设备: Android\n显示尺寸: 1440 x 3200\n刷新率: 120 Hz");
+                    {
+                        Card card("interface");
+                        ImGui::TextUnformatted("界面");
+                        ImGui::Separator();
+                        const char *languages[] = {"跟随系统", "English", "简体中文"};
+                        int choice = 0;
+                        ImGui::Combo(FieldLabel(Language::Chinese, "Language").c_str(), &choice, languages, 3);
+                        ImGui::TextDisabled("系统字体");
+                    }
+                    RenderFrame frame;
+                    frame.language = Language::Chinese;
+                    frame.deltaSeconds = 1.f / 60;
+                    frame.framerate = 60;
+                    frame.surfaceWidth = 1440;
+                    frame.surfaceHeight = 3200;
+                    frame.gpuName = "Adreno 750";
+                    frame.apiVersion = (1u << 22) | (3u << 12);
+                    frame.imageCount = 3;
+                    previewPlugins.emit(frame);
                 },
                 [&] {
                     for (const char *key :
                          {"Frame metrics", "Screen & device", "Vulkan GPU", "Foreground performance HUD"}) {
                         bool enabled = true;
-                        ImGui::Checkbox(Label(Language::Chinese, key).c_str(), &enabled);
+                        Card card(key);
+                        Toggle(Label(Language::Chinese, key).c_str(), &enabled);
                         ImGui::TextWrapped(
                             "%s", Text(Language::Chinese, (std::string(key) + " description").c_str()));
                         ImGui::TextDisabled("%s", Text(Language::Chinese, "Enabled"));
-                        ImGui::Spacing();
-                        ImGui::Separator();
-                        ImGui::Spacing();
                     }
                 });
             ImGui::End();

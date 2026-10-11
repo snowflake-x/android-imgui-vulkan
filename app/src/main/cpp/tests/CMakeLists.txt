@@ -12,7 +12,7 @@ target_include_directories(plugin_runtime_test PRIVATE ..)
 target_link_libraries(plugin_runtime_test PRIVATE Threads::Threads)
 
 add_executable(builtin_plugins_test builtin_plugins_test.cpp
-    ../features/builtin_plugins.cpp ../ui/i18n.cpp
+    ../features/builtin_plugins.cpp ../ui/i18n.cpp ../ui/theme.cpp
     ../plugin/runtime.cpp
     ../vendor/imgui/imgui.cpp
     ../vendor/imgui/imgui_draw.cpp
@@ -22,7 +22,7 @@ target_include_directories(builtin_plugins_test PRIVATE .. ../vendor/imgui)
 target_link_libraries(builtin_plugins_test PRIVATE Threads::Threads)
 
 add_executable(performance_hud_test performance_hud_test.cpp
-    ../features/performance_hud.cpp ../ui/i18n.cpp
+    ../features/performance_hud.cpp ../ui/i18n.cpp ../ui/theme.cpp
     ../plugin/runtime.cpp
     ../vendor/imgui/imgui.cpp
     ../vendor/imgui/imgui_draw.cpp
@@ -36,7 +36,7 @@ add_executable(native_monitor_test native_monitor_test.cpp ../monitor/model.cpp 
 target_include_directories(native_monitor_test PRIVATE ..)
 target_link_libraries(native_monitor_test PRIVATE Threads::Threads)
 
-add_executable(native_settings_test native_settings_test.cpp ../ui/i18n.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
+add_executable(native_settings_test native_settings_test.cpp ../ui/i18n.cpp ../ui/theme.cpp ../monitor/settings_ui.cpp ../monitor/hud_view.cpp
     ../monitor/model.cpp ../monitor/process.cpp ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/session.cpp ../monitor/hud.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
@@ -51,7 +51,8 @@ target_compile_definitions(classic_hud_test PRIVATE HUD_FONT_PATH="${CMAKE_CURRE
 
 find_file(TEST_LATIN_FONT DejaVuSans.ttf PATHS /usr/share/fonts/truetype/dejavu REQUIRED)
 find_file(TEST_CJK_FONT NotoSansCJK-Regular.ttc PATHS /usr/share/fonts/opentype/noto REQUIRED)
-add_executable(navigation_i18n_test navigation_i18n_test.cpp ../monitor/hud_view.cpp ../monitor/hud.cpp ../ui/navigation.cpp ../ui/i18n.cpp
+add_executable(navigation_i18n_test navigation_i18n_test.cpp
+    ../plugin/runtime.cpp ../features/builtin_plugins.cpp ../features/performance_hud.cpp ../monitor/hud_view.cpp ../monitor/hud.cpp ../ui/navigation.cpp ../ui/i18n.cpp ../ui/theme.cpp
     ../ui/font_catalog.cpp ../platform/system_fonts.cpp ../vendor/tinyxml2/tinyxml2.cpp
     ../monitor/collector.cpp ../monitor/graphics_trace.cpp ../monitor/model.cpp ../monitor/process.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
@@ -66,7 +67,7 @@ target_include_directories(graphics_trace_test PRIVATE ..)
 target_compile_definitions(graphics_trace_test PRIVATE TRACE_FIXTURE="$<TARGET_FILE:graphics_trace_fixture>")
 add_dependencies(graphics_trace_test graphics_trace_fixture)
 
-add_executable(navigation_touch_test navigation_touch_test.cpp ../ui/navigation.cpp ../ui/i18n.cpp
+add_executable(navigation_touch_test navigation_touch_test.cpp ../ui/navigation.cpp ../ui/i18n.cpp ../ui/theme.cpp
     ../vendor/imgui/imgui.cpp ../vendor/imgui/imgui_draw.cpp
     ../vendor/imgui/imgui_tables.cpp ../vendor/imgui/imgui_widgets.cpp)
 target_include_directories(navigation_touch_test PRIVATE .. ../vendor/imgui)

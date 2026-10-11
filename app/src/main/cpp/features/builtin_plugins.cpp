@@ -1,4 +1,5 @@
 #include "ui/i18n.h"
+#include "ui/theme.h"
 #include "features/builtin_plugins.h"
 
 #include "imgui.h"
@@ -33,6 +34,9 @@ void RegisterBuiltinPlugins(plugin::Runtime& runtime, std::shared_ptr<HostReport
             const auto language = frame.language;
             state->samples[state->index] = 1000.0f * frame.deltaSeconds;
             state->index = (state->index + 1) % state->samples.size();
+            ui::Card card("frame-metrics-card");
+            ImGui::TextUnformatted(Text(language, "Frame metrics"));
+            ImGui::Separator();
             ImGui::Text(Text(language, "%.1f FPS  |  %.2f ms"), frame.framerate,
                         frame.framerate > 0 ? 1000.0f / frame.framerate : 0);
             ImGui::TextWrapped("%s", Text(language, "App render rate / FIFO VSync. This is not a global game FPS monitor."));
@@ -51,6 +55,7 @@ void RegisterBuiltinPlugins(plugin::Runtime& runtime, std::shared_ptr<HostReport
                 state->nextRefresh = frame.time + 1.0;
                 state->initialized = true;
             }
+            ui::Card card("device-info-card");
             if (ImGui::CollapsingHeader(Label(language, "Screen & device").c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::TextWrapped(Text(language, "%s"), ui::TranslateReport(language, state->text).c_str());
                 ImGui::Text(Text(language, "Render surface: %d x %d px"), frame.surfaceWidth, frame.surfaceHeight);
@@ -60,6 +65,7 @@ void RegisterBuiltinPlugins(plugin::Runtime& runtime, std::shared_ptr<HostReport
     runtime.add({"gpu-info", {}, [](plugin::Context& context) {
         context.on<RenderFrame>([](const RenderFrame& frame) {
             const auto language = frame.language;
+            ui::Card card("gpu-info-card");
             if (ImGui::CollapsingHeader(Label(language, "Vulkan GPU").c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::TextWrapped(Text(language, "%s"), frame.gpuName.c_str());
                 ImGui::Text(Text(language, "API: %u.%u.%u"), frame.apiVersion >> 22,

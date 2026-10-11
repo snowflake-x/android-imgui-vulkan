@@ -1,4 +1,6 @@
 #include "ui/i18n.h"
+#include "ui/theme.h"
+#include <algorithm>
 #include "features/performance_hud.h"
 
 #include "features/builtin_plugins.h"
@@ -35,22 +37,30 @@ void RegisterPerformanceHudPlugin(plugin::Runtime& runtime,
                 state->nextRefresh = frame.time + 1.0;
                 state->initialized = true;
             }
+            ui::Card card("performance-hud-card");
             if (!ImGui::CollapsingHeader(Label(language, "Foreground performance HUD").c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
                 return;
             }
             ImGui::PushID("performance-hud");
             ImGui::TextWrapped("%s", Text(language, "Start a HUD session, then switch to your game. Stop it here or from its notification."));
-            if (ImGui::Button(Label(language, "Configure").c_str())) {
+            const auto buttonSize = ImVec2(std::max(1.f, (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3), ImGui::GetFrameHeight() * 1.2f);
+            const bool stacked = buttonSize.x < ImGui::CalcTextSize(Text(language, "Configure")).x + ImGui::GetStyle().FramePadding.x * 2 ||
+                buttonSize.x < ImGui::CalcTextSize(Text(language, "Start HUD")).x + ImGui::GetStyle().FramePadding.x * 2 ||
+                buttonSize.x < ImGui::CalcTextSize(Text(language, "Stop HUD")).x + ImGui::GetStyle().FramePadding.x * 2;
+            const ImVec2 actionSize(stacked ? -1.f : buttonSize.x, buttonSize.y);
+            if (ImGui::Button(Label(language, "Configure").c_str(), actionSize)) {
                 state->settings = !state->settings;
                 state->initialized = false;
             }
-            ImGui::SameLine();
-            if (ImGui::Button(Label(language, "Start HUD").c_str())) {
+            if (!stacked) ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.08f, .30f, .43f, 1));
+            if (ImGui::Button(Label(language, "Start HUD").c_str(), actionSize)) {
                 host.borrow([](HostPerformanceHud& value) { value.start(); });
                 state->initialized = false;
             }
-            ImGui::SameLine();
-            if (ImGui::Button(Label(language, "Stop HUD").c_str())) {
+            ImGui::PopStyleColor();
+            if (!stacked) ImGui::SameLine();
+            if (ImGui::Button(Label(language, "Stop HUD").c_str(), actionSize)) {
                 host.borrow([](HostPerformanceHud& value) { value.stop(); });
                 state->initialized = false;
             }

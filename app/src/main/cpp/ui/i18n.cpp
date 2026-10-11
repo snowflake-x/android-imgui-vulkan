@@ -29,6 +29,8 @@ constexpr Entry entries[] = {
     {"Rotation", "旋转角度"},
 
     {"Home", "主页"},
+    {"Interface", "界面"},
+    {"Performance control", "性能控制台"},
     {"Plugins", "插件列表"},
     {"Language", "语言"},
     {"Follow system", "跟随系统"},
