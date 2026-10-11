@@ -9,6 +9,7 @@ struct Entry {
     const char *chinese;
 };
 constexpr Entry entries[] = {
+    {"Request root on startup", "启动时自动申请 Root"},
     {"Foreground", "前台应用"},
     {"Graphics API (root call tracing)", "图形 API（root 调用跟踪）"},
     {"Graphics API tracing has a separate switch, off by default and in field presets. Requires root and kernel uprobes support; each capture samples calls for 200 ms and adds tracing overhead. The device Vulkan API version describes support, not the game's active API.",

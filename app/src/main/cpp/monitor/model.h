@@ -16,6 +16,7 @@ struct Metric {
 const std::vector<Metric> &Metrics();
 struct Config {
     bool root = false;
+    bool autoRoot = true;
     bool hudGraph = true, hudExtras = false;
     int interval = 1000, textSize = 14, opacity = 80, corner = 0;
     std::string surface, powerPath;

@@ -386,6 +386,7 @@ void android_main(android_app* state) {
     app = state;
     if (app->activity->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
     vulkanscope::monitor::NativeSession().startSystemInfo();
+    vulkanscope::monitor::NativeSession().requestStartupRoot();
     app->onAppCmd = command;
     app->onInputEvent = [](android_app*, AInputEvent* event) -> int32_t {
         std::lock_guard<std::mutex> lock(vulkanscope::ImGuiMutex());

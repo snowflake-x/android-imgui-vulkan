@@ -95,13 +95,13 @@ bool SaveConfig(const std::string &path, Config c, std::string &error) {
     c.normalize();
     std::ofstream out(path + ".tmp", std::ios::trunc);
     out.imbue(std::locale::classic());
-    out << "VulkanScopeHUD 3\n"
+    out << "VulkanScopeHUD 4\n"
         << c.root << ' ' << c.interval << ' ' << c.textSize << ' ' << c.opacity << ' ' << c.corner << ' '
         << std::setprecision(17) << c.powerScale << '\n'
         << std::quoted(c.surface) << '\n'
         << std::quoted(c.powerPath) << '\n'
         << c.hudGraph << ' ' << c.hudExtras << '\n'
-        << std::quoted(c.language) << '\n';
+        << std::quoted(c.language) << '\n' << c.autoRoot << '\n';
     for (const auto &id : c.order)
         out << id << ' ' << c.has(id) << '\n';
     out.close();
@@ -119,7 +119,7 @@ Config LoadConfig(const std::string &path) {
     in.imbue(std::locale::classic());
     std::string magic;
     int version;
-    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 3))
+    if (!(in >> magic >> version) || magic != "VulkanScopeHUD" || (version < 1 || version > 4))
         return c;
     if (!(in >> c.root >> c.interval >> c.textSize >> c.opacity >> c.corner >> c.powerScale >>
           std::quoted(c.surface) >> std::quoted(c.powerPath)))
@@ -127,6 +127,7 @@ Config LoadConfig(const std::string &path) {
     if (version >= 2 && !(in >> c.hudGraph >> c.hudExtras))
         return Config{};
     if (version >= 3 && !(in >> std::quoted(c.language))) return Config{};
+    if (version >= 4 && !(in >> c.autoRoot)) return Config{};
     c.order.clear();
     std::string id;
     bool enabled;

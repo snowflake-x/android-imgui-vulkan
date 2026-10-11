@@ -32,6 +32,7 @@ bool Session::configure(Config c) {
         report_ = error;
         return false;
     }
+    if (config_.root != c.root || config_.autoRoot != c.autoRoot) ++rootConfigRevision_;
     config_ = std::move(c);
     wake_.notify_all();
     return true;
@@ -72,6 +73,10 @@ std::vector<DiagnosticEntry> Session::diagnosticHistory() const {
 std::string Session::rootReport() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return rootReport_;
+}
+RootAccess Session::rootAccess() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return rootAccess_;
 }
 bool Session::interactive() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -146,30 +151,75 @@ void Session::stopSystemInfo() {
         systemWorker_.join();
 }
 void Session::shutdownDiagnostics() {
+    std::lock_guard<std::mutex> lifecycle(rootLifecycle_);
     rootCancel_ = true;
     if (rootWorker_.joinable())
         rootWorker_.join();
+    std::lock_guard<std::mutex> lock(mutex_);
+    startupRootAttempted_ = false;
 }
 void Session::requestRoot() {
+    std::lock_guard<std::mutex> lifecycle(rootLifecycle_);
+    beginRootRequest(true);
+}
+void Session::requestStartupRoot() {
+    std::lock_guard<std::mutex> lifecycle(rootLifecycle_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!initialized_ || !config_.autoRoot || startupRootAttempted_) return;
+        startupRootAttempted_ = true;
+    }
+    beginRootRequest(false);
+}
+void Session::beginRootRequest(bool diagnostics) {
     if (rootBusy_.exchange(true))
         return;
     if (rootWorker_.joinable())
         rootWorker_.join();
     rootCancel_ = false;
+    std::uint64_t revision;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        revision = rootConfigRevision_;
+        rootAccess_ = RootAccess::Requesting;
         rootReport_ = "Waiting for su authorization (30 second timeout)...";
     }
-    rootWorker_ = std::thread([this] {
-        auto result =
-            RunCommand({"su", "-c",
-                        "id; uname -a; cat /proc/cpuinfo; head -30 /proc/meminfo; getenforce; for z in "
-                        "/sys/class/thermal/thermal_zone*; do cat \"$z/type\" \"$z/temp\" 2>/dev/null; done"},
-                       rootCancel_, 30000);
-        std::lock_guard<std::mutex> lock(mutex_);
-        rootReport_ = (result.success ? "Root diagnostics completed" : result.error) + "\n" + result.output +
-                      "\n(Output limited to 32 KiB)";
+    rootWorker_ = std::thread([this, revision, diagnostics] {
+        try {
+            auto run = [&](const std::string &script, int timeout) {
+                return rootRunner_ ? rootRunner_(script, timeout)
+                                   : RunCommand({"su", "-c", script}, rootCancel_, timeout);
+            };
+            const auto result = run("id -u", 30000);
+            std::istringstream answer(result.output);
+            int uid = -1;
+            std::string extra;
+            const bool granted = result.success && !result.truncated && (answer >> uid) && uid == 0 && !(answer >> extra);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                rootAccess_ = granted && !rootCancel_ ? RootAccess::Granted : RootAccess::Unavailable;
+                rootReport_ = rootCancel_ ? "Root request cancelled" : granted ? "Root granted"
+                    : "Root unavailable or denied. Retry manually after granting access. " + result.error;
+                /** @brief 授权期间用户关闭采样或自动申请后，不得由迟到结果重新开启。 */
+                if (granted && !rootCancel_ && revision == rootConfigRevision_ && (diagnostics || config_.autoRoot)) {
+                    config_.root = true;
+                    std::string error;
+                    if (!SaveConfig(path_, config_, error)) rootReport_ += "\n" + error;
+                }
+            }
+            if (granted && diagnostics && !rootCancel_) {
+                auto detail = run("id; uname -a; cat /proc/cpuinfo; head -30 /proc/meminfo; getenforce; for z in "
+                                  "/sys/class/thermal/thermal_zone*; do cat \"$z/type\" \"$z/temp\" 2>/dev/null; done", 5000);
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (!rootCancel_) rootReport_ += "\n" + detail.output + "\n" + detail.error;
+            }
+        } catch (const std::exception &error) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            rootAccess_ = RootAccess::Unavailable;
+            rootReport_ = std::string("Root request failed: ") + error.what();
+        }
         rootBusy_ = false;
+        wake_.notify_all();
     });
 }
 void Session::collect() {

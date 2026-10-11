@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -127,6 +128,7 @@ void config() {
     std::string error;
     Config c;
     c.root = true;
+    c.autoRoot = false;
     c.language = "zh-Hans";
     c.hudGraph = false;
     c.hudExtras = true;
@@ -139,6 +141,7 @@ void config() {
     require(SaveConfig(path, c, error), "save config");
     auto loaded = LoadConfig(path);
     require(loaded.language == "zh-Hans", "persist language preference");
+    require(!loaded.autoRoot, "persist startup root opt-out");
     require(!loaded.hudGraph && loaded.hudExtras, "persist classic HUD options");
     require(loaded.root && loaded.surface == c.surface && loaded.textSize == 24 && loaded.interval == 1000 &&
                 !loaded.has("fps"),
@@ -153,6 +156,10 @@ void config() {
     auto versionTwo = LoadConfig(path);
     require(versionTwo.language == "system" && !versionTwo.hudGraph && versionTwo.hudExtras,
             "version two adopts system language without changing HUD layout");
+    std::ofstream(path) << "VulkanScopeHUD 3\n0 500 16 90 2 0.000001\n\"layer\"\n\"\"\n0 1\n\"en\"\nfps 0\n";
+    const auto versionThree = LoadConfig(path);
+    require(versionThree.autoRoot && !versionThree.root && !versionThree.has("fps"),
+            "legacy configuration adopts automatic startup authorization without fabricating a grant");
     std::ofstream(path) << "bad config";
     require(!LoadConfig(path).root, "invalid config fails closed");
     std::remove(path.c_str());
@@ -391,6 +398,46 @@ void systemSnapshots() {
     session.startSystemInfo();
     session.stopSystemInfo();
 }
+/** @brief 启动授权仅在后台执行一次，真实 UID 0 才开启采样，并尊重并发关闭及取消。 */
+void startupRoot() {
+    const auto directory = "/tmp/vulkanscope-startup-root-" + std::to_string(getpid());
+    std::filesystem::create_directories(directory);
+    for (int mode = 0; mode < 5; ++mode) {
+        std::atomic<int> calls{0};
+        std::atomic<bool> release{false};
+        Session session([&](const std::string &script, int timeout) {
+            ++calls;
+            require(script == "id -u" && timeout == 30000, "startup requests only bounded authorization");
+            while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return CommandResult{mode != 1, mode == 2 ? "2000\n" : "0\n", mode == 1 ? "denied" : ""};
+        });
+        session.initialize(directory, {});
+        auto c = session.config();
+        c.root = false;
+        c.autoRoot = mode != 4;
+        require(session.configure(c), "save startup preference");
+        session.requestStartupRoot();
+        session.requestStartupRoot();
+        if (mode == 4) {
+            require(session.rootAccess() == RootAccess::Unknown && calls == 0, "opt-out performs no root request");
+            continue;
+        }
+        require(session.rootAccess() == RootAccess::Requesting && !session.running(), "startup does not block or start HUD");
+        if (mode == 3) {
+            c.autoRoot = false;
+            require(session.configure(c), "disable automatic root while waiting");
+        }
+        release = true;
+        for (int wait = 0; wait < 1000 && session.rootAccess() == RootAccess::Requesting; ++wait)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        require(calls == 1 && session.rootAccess() != RootAccess::Requesting, "denial and success never automatically reprompt");
+        require(session.config().root == (mode == 0), "only verified grants enable sampling, without overriding a pending opt-out");
+        require(!session.config().has("graphics_api") && !session.config().has("gpu_time"), "authorization leaves tracing opt-ins unchanged");
+        session.shutdownDiagnostics();
+        require(LoadConfig(directory + "/native-hud.conf").root == (mode == 0), "persist startup authorization outcome");
+    }
+    std::filesystem::remove_all(directory);
+}
 void lifecycle() {
     Session session;
     std::atomic<int> calls{0};
@@ -435,6 +482,7 @@ int main() {
         processMemory();
         foregroundQueries();
         systemSnapshots();
+        startupRoot();
         std::cout << "Native monitor regression tests passed\n";
     } catch (const std::exception &e) {
         std::cerr << e.what() << '\n';

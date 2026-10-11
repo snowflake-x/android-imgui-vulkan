@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 namespace vulkanscope::monitor {
+enum class RootAccess { Unknown, Requesting, Granted, Unavailable };
 struct PlatformSample {
     Values values;
     std::string system;
@@ -15,6 +16,7 @@ struct PlatformSample {
 /** @brief 进程级原生会话；配置/快照受锁保护，采集线程可取消且必须 join 后销毁。 */
 class Session {
   public:
+    explicit Session(Collector::CommandRunner rootRunner = {}) : rootRunner_(std::move(rootRunner)) {}
     ~Session();
     void initialize(const std::string &directory, std::function<PlatformSample()> platform);
     Config config() const;
@@ -27,6 +29,9 @@ class Session {
     std::vector<DiagnosticEntry> diagnosticHistory() const;
     std::string rootReport() const;
     void requestRoot();
+    /** @brief 每次主界面生命周期仅自动申请一次，不启动 HUD；拒绝后由用户手动重试。 */
+    void requestStartupRoot();
+    RootAccess rootAccess() const;
     void start();
     void stop();
     void setError(const std::string &error);
@@ -40,12 +45,18 @@ class Session {
 
   private:
     void collect();
+    void beginRootRequest(bool diagnostics);
     mutable std::mutex mutex_;
     std::mutex lifecycle_;
+    std::mutex rootLifecycle_;
     std::condition_variable wake_;
     std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_;
     DiagnosticHistory diagnosticHistory_;
-    std::string rootReport_ = "Not requested. Root access requires an explicit action.";
+    std::string rootReport_ = "Root has not been requested";
+    RootAccess rootAccess_ = RootAccess::Unknown;
+    Collector::CommandRunner rootRunner_;
+    std::uint64_t rootConfigRevision_ = 0;
+    bool startupRootAttempted_ = false;
     Config config_;
     HudSnapshot hud_;
     Values gpu_;

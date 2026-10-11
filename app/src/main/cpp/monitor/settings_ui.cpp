@@ -68,6 +68,7 @@ void DrawSettings(SettingsState &state, ui::Language language, ImFont *hudFont) 
     changed |= ui::Toggle(Label(language, "Frame history graph").c_str(), &config.hudGraph);
     changed |= ui::Toggle(Label(language, "Additional sensor rows").c_str(), &config.hudExtras);
     changed |= ui::Toggle(Label(language, "Enable root sampling").c_str(), &config.root);
+    changed |= ui::Toggle(Label(language, "Request root on startup").c_str(), &config.autoRoot);
     ImGui::TextWrapped("%s", Text(language, "Root is optional. FPS, GPU metrics and engine inspection need an existing su provider. Enabling this option authorizes telemetry and any separately enabled tracing while the HUD runs. To retry a denied authorization, disable it for one sample, then re-enable it."));
     changed |= ui::Toggle(Label(language, "Graphics API (root call tracing)").c_str(), &config.enabled["graphics_api"]);
     ImGui::TextWrapped("%s", Text(language, "Graphics API tracing has a separate switch, off by default and in field presets. Requires root and kernel uprobes support; each capture samples calls for 200 ms and adds tracing overhead. The device Vulkan API version describes support, not the game's active API."));
