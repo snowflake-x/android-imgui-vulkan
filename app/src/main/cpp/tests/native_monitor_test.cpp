@@ -438,6 +438,29 @@ void startupRoot() {
     }
     std::filesystem::remove_all(directory);
 }
+void rootDisplayPermission() {
+    Session session;
+    std::atomic<int> samples{0};
+    session.initialize("/tmp/vulkanscope-root-display-" + std::to_string(getpid()), [&] {
+        PlatformSample p;
+        p.overlayAllowed = false;
+        p.interactive = false;
+        ++samples;
+        return p;
+    });
+    session.start(true);
+    for (int i = 0; i < 100 && samples == 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    require(samples > 0 && session.running() && session.rootDisplayActive(),
+            "root display does not depend on ordinary overlay permission");
+    session.stop();
+    require(!session.rootDisplayActive(), "stopping clears active display backend");
+    session.start(false);
+    for (int i = 0; i < 100 && session.running(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    require(!session.running(), "ordinary overlay still stops after permission revocation");
+    session.stop();
+}
 void lifecycle() {
     Session session;
     std::atomic<int> calls{0};
@@ -477,6 +500,7 @@ int main() {
         presets();
         processes();
         lifecycle();
+        rootDisplayPermission();
         authorization();
         graphicsAuthorization();
         processMemory();

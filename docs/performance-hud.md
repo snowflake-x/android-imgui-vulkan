@@ -117,3 +117,14 @@ Unity/Unreal 游戏不会因为取得 root 就提供通用内部渲染尺寸。�
 - Vulkan 通过 `vkGetDeviceProcAddr` 直接取得驱动函数地址时可能绕过 loader 探针；EGL 扩展地址同样可能绕过导出函数。200 ms 内没有调用、采样后创建的新线程、缓冲区截断都可能漏检。检测结果表示“本次观察到”，不能证明列出了全部 API。
 - DX11/DX12 经兼容层转换时这里只能观察底层 EGL/Vulkan；不宣称识别上层 DirectX 版本或 Vulkan/GLES API 版本。
 - 宿主测试覆盖真实 ELF 动态符号、Root 文件读取回退、损坏文件、事件判定、阶段状态、独立实例脚本、身份检查和取消/失败后的清理。Android 双 ABI 编译不能代替设备内核验证；必须在支持 uprobes 的 root 设备上验证 EGL/Vulkan 应用、混合应用、切前台和停止采集。
+
+
+## Root 独立显示图层
+
+默认开启「Root 独立显示图层」。已取得 Root 授权（或启用了 Root 采样）时，启动显示由 C++ 后台进程控制器通过 `su` 启动 `app_process`，直接创建默认显示屏的 SurfaceControl 图层。此路径不调用 WindowManager，不检查或申请 SYSTEM_ALERT_WINDOW。没有 Root 时使用普通悬浮窗；有 Root 但直接显示失败时**不会静默降级**，主页报告会保留失败阶段和系统异常。可以关闭此选项、授予普通悬浮窗权限，再重新启动显示。
+
+特权进程仅持有图层，按显示屏旋转、原生计算的尺寸和四角配置更新布局。Surface 经 Binder 交给应用内现有 C++ Vulkan/ImGui 渲染器，配置、采集、GPU 事件跟踪和字体资源仍由 C++ 宿主管理。图层没有输入窗口，不拦截游戏触摸。不会修改 SELinux、授予额外系统权限或写入系统分区。
+
+Root 启动桥接要求 UID 0 和一次性随机会话令牌；导出的 Provider 不提供文件、配置或指标查询。停止服务先撤销 Binder、等待原生 Surface 渲染退出，再取消 Root 子进程。辅助进程监听宿主 Binder 死亡，并具有 15 秒心跳看门狗；服务也检查 30 秒启动期限，避免孤立图层和无限等待。
+
+这是系统隐藏 SurfaceControl API 的兼容路径（主要面向 Android 10–16），不是「Root 后没有任何系统限制」。厂商固件、SELinux 和 SurfaceFlinger 策略仍可能拒绝创建；错误会完整显示，需在具体机型验证。普通悬浮窗作为手动兼容选项保留。开启该显示方式不会改变图形 API 跟踪的证据要求：`API: no calls` 仍表示采样窗口内未捕获调用。

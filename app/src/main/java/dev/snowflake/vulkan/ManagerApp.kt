@@ -225,6 +225,7 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
                     Description(tr("Presentation time", "呈现间隔"))
                 }
             }
+            if (state.running) Description(if (state.data.optBoolean("rootDisplayActive")) tr("Root display layer", "Root 独立显示图层") else tr("Standard overlay", "普通悬浮窗"))
             val apiStatus = values.optString("graphics_api_status")
             Text(state.data.optString("apiCaption", "API: OFF"), color = MiuixTheme.colorScheme.primary)
             if (apiStatus == "no_calls") Description(tr(
@@ -280,6 +281,10 @@ private fun pluginIcon(id: String): ImageVector = when (id) {
         SuperSwitch(title = tr("Request root on startup", "启动时自动申请 Root"),
             summary = tr("Enable native sampling after authorization", "授权成功后自动启用原生采样"),
             checked = state.config.optBoolean("autoRoot", true), onCheckedChange = { change("autoRoot", it.toString()) })
+        SuperSwitch(title = tr("Root display layer", "Root 独立显示图层"),
+            summary = tr("Use SurfaceFlinger when root is available. Turn off for standard overlay; restart HUD to apply.",
+                "有 Root 时直接创建 SurfaceFlinger 图层。关闭后使用普通悬浮窗，重启显示生效。"),
+            checked = state.config.optBoolean("rootDisplay", true), onCheckedChange = { change("rootDisplay", it.toString()) })
         SuperSwitch(title = tr("Root sampling", "Root 采样"), checked = state.config.optBoolean("root"),
             onCheckedChange = { change("root", it.toString()) })
     }

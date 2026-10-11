@@ -34,7 +34,9 @@ class Session {
     /** @brief 每次主界面生命周期仅自动申请一次，不启动 HUD；拒绝后由用户手动重试。 */
     void requestStartupRoot();
     RootAccess rootAccess() const;
-    void start();
+    void start(bool rootDisplay = false);
+    /** @brief 当前会话的显示后端；配置切换只影响下次启动，不改变运行中的权限判断。 */
+    bool rootDisplayActive() const { return rootDisplay_; }
     void stop();
     void setError(const std::string &error);
     void fail(const std::string &error);
@@ -51,6 +53,7 @@ class Session {
     void beginRootRequest(bool diagnostics);
     mutable std::mutex mutex_;
     std::mutex lifecycle_;
+    std::atomic<bool> rootDisplay_{false};
     std::mutex rootLifecycle_;
     std::condition_variable wake_;
     std::string path_, report_ = "Performance HUD stopped", system_, diagnostics_;

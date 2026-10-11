@@ -27,6 +27,9 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     private SurfaceView surface;
     private WindowManager.LayoutParams layout;
     private boolean started;
+    private boolean rootMode;
+    private RootDisplayBroker rootBroker;
+    private long rootStartedAt;
     private static final String STOP = "dev.snowflake.vulkan.hud.STOP";
 
     private final Runnable update = new Runnable() {
@@ -34,8 +37,17 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
         public void run() {
             if (!started)
                 return;
-            if (!Settings.canDrawOverlays(HudService.this) || !nativeRunning()) {
+            if ((!rootMode && !Settings.canDrawOverlays(HudService.this)) || !nativeRunning()) {
                 stopSelf();
+                return;
+            }
+            if (rootMode) {
+                if (!rootBroker.attached() && android.os.SystemClock.uptimeMillis() - rootStartedAt > 30000) {
+                    nativeError("Root display startup timed out; check root authorization and firmware SurfaceControl support");
+                    stopSelf();
+                    return;
+                }
+                handler.postDelayed(this, 500);
                 return;
             }
             try {
@@ -73,7 +85,8 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
         }
         if (started)
             return START_NOT_STICKY;
-        if (!Settings.canDrawOverlays(this)) {
+        rootMode = nativeRootMode();
+        if (!rootMode && !Settings.canDrawOverlays(this)) {
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -97,6 +110,23 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
                     .addAction(new Notification.Action.Builder(null, "Stop", stop).build())
                     .build();
             startForeground(3001, notification);
+            nativeStart(getApplicationContext(), getFilesDir().getAbsolutePath(), rootMode);
+            started = true;
+            if (rootMode) {
+                rootBroker = new RootDisplayBroker(new RootDisplayBroker.Host() {
+                    @Override public boolean running() { return nativeRunning(); }
+                    @Override public int[] geometry(int width, int height, float density) {
+                        return nativeGeometry(width, height, density);
+                    }
+                    @Override public void surface(Surface surface, float density) { nativeSurface(surface, density); }
+                });
+                RootDisplayProvider.install(rootBroker);
+                rootStartedAt = android.os.SystemClock.uptimeMillis();
+                String uri = "content://" + (android.os.Process.myUid() / 100000) + "@" + getPackageName() + ".rootdisplay";
+                nativeRootStart(getApplicationInfo().sourceDir, uri, rootBroker.token);
+                handler.post(update);
+                return START_NOT_STICKY;
+            }
             windows = getSystemService(WindowManager.class);
             surface = new SurfaceView(this);
             surface.setZOrderOnTop(true);
@@ -114,8 +144,6 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
             layout.gravity = geometry[2];
             layout.alpha = 0.8f;
             layout.setTitle("dev.snowflake.vulkan.PerformanceHUD");
-            nativeStart(getApplicationContext(), getFilesDir().getAbsolutePath());
-            started = true;
             windows.addView(surface, layout);
             handler.post(update);
         } catch (RuntimeException error) {
@@ -144,6 +172,9 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
     public void onDestroy() {
         started = false;
         handler.removeCallbacksAndMessages(null);
+        nativePrepareStop();
+        RootDisplayProvider.install(null);
+        rootBroker = null;
         nativeStop();
         if (surface != null) {
             surface.getHolder().removeCallback(this);
@@ -157,8 +188,16 @@ public final class HudService extends Service implements SurfaceHolder.Callback 
         super.onDestroy();
     }
 
+    /** Reads native display preference and root availability without a shell call. */
+    public static boolean usesRootDisplay() { return nativeRootMode(); }
+    private static native boolean nativeRootMode();
+    /** Starts a cancellable native-owned root SurfaceControl process off the main thread. */
+    private static native void nativeRootStart(String apk, String providerUri, String token);
+
     /** Starts the native session; permission and foreground-service establishment have already succeeded. */
-    private static native void nativeStart(android.content.Context context, String directory);
+    private static native void nativeStart(android.content.Context context, String directory, boolean rootDisplay);
+    /** Marks an intentional stop before revoking Binder; does not kill the Surface owner yet. */
+    private static native void nativePrepareStop();
     /** Cancels collection and rendering and waits for resource ownership to return. */
     private static native void nativeStop();
     /** Transfers a Surface reference to C++, or cancels rendering for a null Surface. */

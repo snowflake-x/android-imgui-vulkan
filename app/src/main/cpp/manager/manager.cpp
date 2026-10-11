@@ -45,10 +45,12 @@ std::string Manager::snapshot(ui::Language language) {
     const char *rootStates[] = {"unknown", "requesting", "granted", "unavailable"};
     out << "{\"rootAccess\":" << text(rootStates[static_cast<unsigned>(session_.rootAccess())])
         << ",\"rootReport\":" << text(session_.rootReport()) << ",\"running\":" << (session_.running() ? "true" : "false")
+        << ",\"rootDisplayActive\":" << (session_.rootDisplayActive() ? "true" : "false")
         << ",\"report\":" << text(session_.report()) << ",\"system\":" << text(ui::TranslateReport(language, session_.system()))
         << ",\"fresh\":" << (hud.capturedNs > 0 ? "true" : "false")
         << ",\"apiCaption\":" << text(monitor::GraphicsApiCaption(c, hud))
         << ",\"config\":{\"root\":" << (c.root ? "true" : "false") << ",\"autoRoot\":" << (c.autoRoot ? "true" : "false")
+        << ",\"rootDisplay\":" << (c.rootDisplay ? "true" : "false")
         << ",\"hudGraph\":" << (c.hudGraph ? "true" : "false") << ",\"hudExtras\":" << (c.hudExtras ? "true" : "false")
         << ",\"interval\":" << c.interval << ",\"textSize\":" << c.textSize << ",\"opacity\":" << c.opacity
         << ",\"corner\":" << c.corner << ",\"surface\":" << text(c.surface) << ",\"powerPath\":" << text(c.powerPath)
@@ -103,6 +105,7 @@ bool Manager::command(const std::string &key, const std::string &value) {
         };
         if (key == "root") boolean(c.root);
         else if (key == "autoRoot") boolean(c.autoRoot);
+        else if (key == "rootDisplay") boolean(c.rootDisplay);
         else if (key == "hudGraph") boolean(c.hudGraph);
         else if (key == "hudExtras") boolean(c.hudExtras);
         else if (key == "interval") {

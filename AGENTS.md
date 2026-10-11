@@ -24,7 +24,7 @@ bool UpdateSurfaceSize(int width, int height);
 ## Android 桥接与原生实现
 
 - 应用内管理界面与配置表单使用 Kotlin Compose + Miuix；配置保存、指标采集、系统信息读取和 HUD 主逻辑保留 C++，HUD 使用 ImGui，不使用 TextView HUD。
-- Java 只承担 Service 生命周期、系统权限和通知、WindowManager Surface 容器及回调桥接。公开方法和 JNI 入口保留 Javadoc，说明线程、取消与资源生命周期；不要在 Java Javadoc 中使用 `@brief`。
+- Java 只承担 Service 生命周期、系统权限和通知、WindowManager / Root SurfaceControl 容器及 Binder 回调桥接。公开方法和 JNI 入口保留 Javadoc，说明线程、取消与资源生命周期；不要在 Java Javadoc 中使用 `@brief`。
 - 系统公共 API 缺少 NDK 对应项时，从 C++ 通过 JNI 调用；不要保存跨线程 JNIEnv 或局部引用。进程级 Application 全局引用由原生平台宿主持有。
 - 悬浮窗拥有独立 ImGui/Vulkan 上下文，访问 ImGui 必须持有宿主互斥锁并显式选择上下文。Surface 释放前取消并 join 渲染线程；等待 GPU 后销毁资源。
 - 原生采集线程必须支持取消、超时、输出上限和 join；不得在渲染回调中执行 shell。按用户要求，主界面启动时默认在后台申请 root，允许关闭自动申请；必须验证 UID 0 后才开启 root 采样，拒绝/超时不循环重试，错误/缺失数据不得用推测值替代。

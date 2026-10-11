@@ -11,6 +11,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <provider android:name=".RootDisplayProvider" android:authorities="${applicationId}.rootdisplay" android:exported="true" android:grantUriPermissions="false" />
         <service android:name=".HudService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started foreground game performance monitoring with a persistent, touch-through overlay; stop from notification or settings." />
         </service>

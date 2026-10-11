@@ -41,4 +41,25 @@ class ManagerAppTest {
         compose.onNodeWithContentDescription("设置").performClick()
         compose.onNodeWithText("启动时自动申请 Root").assertExists()
     }
+    @Test
+    @Config(sdk = [35], qualifiers = "en-rUS-w891dp-h411dp-land-night-xhdpi")
+    fun englishLandscapeKeepsNavigationAndScrollableSettings() {
+        val data = JSONObject("""{"rootAccess":"unavailable","config":{"language":"en","rootDisplay":true},"plugins":[]}""")
+        compose.setContent { ManagerApp(ManagerState(data, loading = false), { _, _ -> }, { _, _ -> }, {}) }
+        compose.onNodeWithText("Plugins").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Root display layer").assertExists()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Additional sensors"))
+        compose.onNodeWithText("Additional sensors").assertIsDisplayed()
+        compose.onNodeWithText("Home").assertIsDisplayed()
+        compose.runOnIdle {
+            val view = compose.activity.window.decorView
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
+            val output = File("build/previews/miuix-settings-landscape.png")
+            output.parentFile!!.mkdirs()
+            output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+    }
+
 }

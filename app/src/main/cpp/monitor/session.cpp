@@ -107,7 +107,7 @@ void Session::fail(const std::string &text) {
     cancel_ = true;
     wake_.notify_all();
 }
-void Session::start() {
+void Session::start(bool rootDisplay) {
     std::lock_guard<std::mutex> lifecycle(lifecycle_);
     if (!cancel_)
         return;
@@ -118,6 +118,7 @@ void Session::start() {
         failed_ = false;
         hud_ = {};
     }
+    rootDisplay_ = rootDisplay;
     cancel_ = false;
     setError("Starting native performance capture...");
     worker_ = std::thread([this] { collect(); });
@@ -129,6 +130,7 @@ void Session::stop() {
     if (worker_.joinable())
         worker_.join();
     std::lock_guard<std::mutex> lock(mutex_);
+    rootDisplay_ = false;
     if (!failed_)
         report_ = "Performance HUD stopped";
 }
@@ -243,7 +245,7 @@ void Session::collect() {
                 interactive_ = platform.interactive;
                 system_ = platform.system;
             }
-            if (!platform.overlayAllowed) {
+            if (!rootDisplay_ && !platform.overlayAllowed) {
                 fail("Overlay permission revoked; stop and grant permission again");
                 break;
             }

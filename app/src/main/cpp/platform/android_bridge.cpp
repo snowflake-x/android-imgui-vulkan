@@ -10,6 +10,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <sys/system_properties.h>
 #include <thread>
@@ -23,6 +24,15 @@ jobject context = nullptr;
 std::mutex contextMutex;
 std::atomic<bool> overlayCancel{true};
 std::thread overlayThread;
+std::thread rootDisplayThread;
+std::atomic<bool> rootDisplayCancel{true};
+std::atomic<bool> rootDisplayStopping{true};
+/** @brief Service 生命周期串行调用；取消 root 子进程并回收所属工作线程。 */
+void stopRootDisplay() {
+    rootDisplayStopping = true;
+    rootDisplayCancel = true;
+    if (rootDisplayThread.joinable()) rootDisplayThread.join();
+}
 std::mutex overlayWaitMutex;
 std::condition_variable overlayWake;
 /** @brief 每次采样建立局部引用帧；后台线程离开作用域时自动从 VM 分离。 */
@@ -224,10 +234,12 @@ monitor::PlatformSample ReadPlatformSample() {
         }
         exception(e);
     }
-    auto settings = e->FindClass("android/provider/Settings");
-    auto canDraw = e->GetStaticMethodID(settings, "canDrawOverlays", "(Landroid/content/Context;)Z");
-    sample.overlayAllowed = e->CallStaticBooleanMethod(settings, canDraw, context);
-    exception(e);
+    if (!monitor::NativeSession().rootDisplayActive()) {
+        auto settings = e->FindClass("android/provider/Settings");
+        auto canDraw = e->GetStaticMethodID(settings, "canDrawOverlays", "(Landroid/content/Context;)Z");
+        sample.overlayAllowed = e->CallStaticBooleanMethod(settings, canDraw, context);
+        exception(e);
+    }
     auto displays = service(e, "display");
     if (displays && !exception(e)) {
         auto display =
@@ -472,11 +484,45 @@ extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeErr
     monitor::NativeSession().fail(utf(e, error));
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeStart(JNIEnv *e, jclass,
-                                                                                   jobject c, jstring path) {
+                                                                                   jobject c, jstring path, jboolean rootDisplay) {
     initialize(e, c, path);
-    monitor::NativeSession().start();
+    monitor::NativeSession().start(rootDisplay);
+}
+extern "C" JNIEXPORT jboolean JNICALL Java_dev_snowflake_vulkan_HudService_nativeRootMode(JNIEnv *, jclass) {
+    const auto c = monitor::NativeSession().config();
+    return c.rootDisplay && (c.root || monitor::NativeSession().rootAccess() == monitor::RootAccess::Granted);
+}
+/** @brief Root 仅创建系统 Surface；绑定回应用的 ImGui 渲染器，不在特权进程重复采集或写配置。 */
+extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeRootStart(
+    JNIEnv *e, jclass, jstring apk, jstring uri, jstring token) {
+    stopRootDisplay();
+    try {
+        const auto command = "CLASSPATH=" + monitor::Quote(utf(e, apk)) +
+            " exec /system/bin/app_process /system/bin dev.snowflake.vulkan.RootHudBootstrap " +
+            monitor::Quote(utf(e, uri)) + " " + monitor::Quote(utf(e, token));
+        rootDisplayCancel = false;
+        rootDisplayStopping = false;
+        rootDisplayThread = std::thread([command] {
+            try {
+                const auto result = monitor::RunCommand({"su", "-c", command}, rootDisplayCancel,
+                                                       std::numeric_limits<int>::max(), 8192);
+                if (!rootDisplayStopping && !rootDisplayCancel && monitor::NativeSession().running())
+                    monitor::NativeSession().fail("Root display stopped: " + result.error + "\n" + result.output +
+                        "\nDisable Root display in settings to use the standard overlay compatibility mode.");
+            } catch (const std::exception &error) {
+                if (!rootDisplayStopping) monitor::NativeSession().fail(std::string("Root display worker failed: ") + error.what());
+            }
+        });
+    } catch (const std::exception &error) {
+        monitor::NativeSession().fail(std::string("Root display launch failed: ") + error.what());
+    }
+}
+/** @brief 撤销 Binder 前标记正常停止，避免辅助进程先退出时被错误报告为显示故障。 */
+extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativePrepareStop(JNIEnv *, jclass) {
+    rootDisplayStopping = true;
 }
 extern "C" JNIEXPORT void JNICALL Java_dev_snowflake_vulkan_HudService_nativeStop(JNIEnv *, jclass) {
+    stopRootDisplay();
     stopOverlay();
     monitor::NativeSession().stop();
 }

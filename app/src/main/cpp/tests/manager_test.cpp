@@ -16,6 +16,8 @@ int main() {
         require(JsonString("a\n\"\\\t") == "\"a\\u000a\\\"\\\\\\u0009\"");
         require(manager.command("language", "zh-Hans"));
         require(manager.command("autoRoot", "false"));
+        require(session.config().rootDisplay);
+        require(manager.command("rootDisplay", "false"));
         require(manager.command("plugin:device-info", "false"));
         require((session.config().managerPlugins & 1u) == 0);
         require(!manager.command("plugin:unknown", "true"));
@@ -31,7 +33,7 @@ int main() {
         require(snapshot.find("\"opacity\":75") != std::string::npos);
         require(snapshot.find("\"fresh\":false") != std::string::npos);
         auto saved = monitor::LoadConfig(std::string(path) + "/native-hud.conf");
-        require(saved.language == "zh-Hans" && !saved.autoRoot && saved.managerPlugins == 6);
+        require(saved.language == "zh-Hans" && !saved.autoRoot && saved.managerPlugins == 6 && !saved.rootDisplay);
     }
     std::filesystem::remove_all(path);
 }
