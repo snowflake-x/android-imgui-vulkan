@@ -74,7 +74,7 @@ constexpr Entry entries[] = {
     {"Classic Metal HUD", "经典 Metal HUD"},
     {"Overlay style", "悬浮显示风格"},
     {"Memory scanner", "内存扫描"},
-    {"Memory scanner description", "读取进程内存，并尝试导出 Unity IL2CPP 类型名称。"},
+    {"Memory scanner description", "内存搜索与 Unity 运行时检查，支持字段编辑、方法调用和 Hook。"},
     {"Frame history graph", "帧历史曲线"},
     {"Additional sensor rows", "附加传感器行"},
     {"Enable root sampling", "启用 Root 采样"},

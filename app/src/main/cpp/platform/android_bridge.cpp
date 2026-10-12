@@ -427,15 +427,21 @@ MemoryExecutor memoryExecutor() {
     if (exception(e) || !libObject) return {};
     const auto library = utf(e, libObject);
     if (exception(e) || library.empty()) return {};
-    return [apk, library](const MemoryJob &job, const std::atomic<bool> &cancel) {
+    auto injectorObject = static_cast<jstring>(e->CallObjectMethod(loader, findLibrary, e->NewStringUTF("vulkanscope_injector")));
+    if (exception(e)) return {};
+    auto agentObject = static_cast<jstring>(e->CallObjectMethod(loader, findLibrary, e->NewStringUTF("vulkanscope_unity")));
+    if (exception(e)) return {};
+    const auto injector = utf(e, injectorObject), agent = utf(e, agentObject);
+    return [apk, library, injector, agent](const MemoryJob &job, const std::atomic<bool> &cancel) {
         std::string encoded;
         constexpr char hex[] = "0123456789abcdef";
         for (unsigned char c : job.input) { encoded += hex[c >> 4]; encoded += hex[c & 15]; }
         if (encoded.empty()) encoded = "00";
-        const auto command = "CLASSPATH=" + monitor::Quote(apk) +
+        auto command = "CLASSPATH=" + monitor::Quote(apk) +
             " exec /system/bin/app_process /system/bin dev.snowflake.vulkan.MemoryProbeBootstrap " +
             monitor::Quote(library) + " " + monitor::Quote(job.operation) + " " + std::to_string(job.pid) +
             " " + std::to_string(job.start) + " " + monitor::Quote(job.kind) + " " + monitor::Quote(encoded);
+        if (job.operation == "runtime") command += " " + monitor::Quote(injector) + " " + monitor::Quote(agent);
         return monitor::RunCommand({"su", "-c", command}, cancel, 30000, 512u << 10);
     };
 }

@@ -15,7 +15,7 @@ constexpr std::array<const char *, 4> descriptions{
     "Screen, device and Android system information.",
     "Vulkan device, driver and supported API information.",
     "Native foreground performance monitoring and HUD display.",
-    "Read process memory and attempt Unity IL2CPP type-name export."};
+    "Memory search and Unity runtime inspection, field editing, method calls and hooks."};
 }
 std::string JsonString(const std::string &value) {
     const char hex[] = "0123456789abcdef";
@@ -99,6 +99,7 @@ std::string Manager::snapshot(ui::Language language) {
     runtime_.emit(MemoryQuery{&memory});
     out << "],\"memory\":{\"busy\":" << (memory.busy ? "true" : "false")
         << ",\"status\":" << text(memory.status) << ",\"report\":" << text(memory.report)
+        << ",\"runtimeReport\":" << text(memory.runtimeReport)
         << ",\"processes\":[";
     first = true;
     for (const auto &p : memory.processes) {
@@ -125,17 +126,22 @@ std::string Manager::snapshot(ui::Language language) {
     return out.str();
 }
 bool Manager::command(const std::string &key, const std::string &value) {
-    if (key.size() > 128 || value.size() > 512) return false;
+    if (key.size() > 128 || value.size() > (key == "memory:runtime" ? 17000u : 512u)) return false;
     if (key.rfind("memory:", 0) == 0) {
         if (!runtime_.isLoaded("memory-scanner")) return false;
         MemoryJob job;
         job.operation = key.substr(7);
         if (job.operation != "cancel" && session_.rootAccess() != monitor::RootAccess::Granted) return false;
-        if (job.operation == "scan" || job.operation == "unity" || job.operation == "view") {
+        if (job.operation == "scan" || job.operation == "unity" || job.operation == "view" || job.operation == "runtime") {
             std::istringstream fields(value);
             std::string encoded, extra;
             if (!(fields >> job.pid >> job.start >> job.kind >> encoded) || fields >> extra) return false;
-            if (job.operation == "view") {
+            if (job.operation == "runtime") {
+                if (encoded.empty() || encoded.size() > 16384 || encoded.size() % 2 ||
+                    encoded.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) return false;
+                for (size_t i = 0; i < encoded.size(); i += 2)
+                    job.input += static_cast<char>(std::stoul(encoded.substr(i, 2), nullptr, 16));
+            } else if (job.operation == "view") {
                 std::size_t addressEnd = 0, sizeEnd = 0;
                 try {
                     const auto address = std::stoull(job.kind, &addressEnd, 16);

@@ -44,3 +44,7 @@ Root 启动所用原生库路径由应用 ClassLoader.findLibrary 解析，支�
 memory_scanner_test 覆盖数值编码、跨块 / 跨相邻映射匹配、空洞、读量限制、取消、元数据多版本布局、非法表偏移和 token、内存解释、插件卸载及不完整协议。manager_test 验证插件开关持久化和 Root 门控。
 
 Android 真机仍需验证实际 su / SELinux、目标进程内存访问、标准 Unity IL2CPP 示例应用导出及文档保存；宿主测试不代表已验证游戏或所有 Unity 版本。
+
+## Unity 运行时 Inspector
+
+页面新增「打开 Unity 运行时 Inspector」入口，通过独立 Root 附加后端浏览真实运行时对象、组件、字段和方法，并提供字段 / 原始内存写入、方法调用及 Hook。它与上述只读扫描后端分离；运行时操作的能力、限制与生命周期见 [Unity Runtime Inspector](unity-runtime-inspector.md)。

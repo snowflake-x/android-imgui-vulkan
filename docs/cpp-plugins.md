@@ -199,3 +199,5 @@ Android 入口现在使用 Kotlin Compose + Miuix。`manager/Manager` 在专用�
 ## 内存分析插件
 
 新增可选 memory-scanner，默认关闭，无其他插件依赖。宿主注入 Root 工作进程执行器，插件按作用域管理单工作线程，通过 MemoryAction / MemoryQuery 类型事件交互。卸载及管理界面生命周期结束时取消并等待线程；不影响性能 HUD 会话。扫描、Unity 元数据导出和布局候选解释见 [内存分析说明](memory-scanner.md)。
+
+memory-scanner 另支持 `runtime` 类型任务：Root helper 通过内置 Frida Core 将独立 C++ IL2CPP agent 附加到所选进程，JSON 响应保存在 runtimeReport。进程内代理与 UI / HUD 原生上下文分离；切换目标、卸载和暂停时发送 detach 清理 Hook / 对象句柄，代理还有空闲清理。详细线程、生命周期及兼容性边界见 [Unity Runtime Inspector](unity-runtime-inspector.md)。

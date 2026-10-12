@@ -7,6 +7,12 @@ find_package(Threads REQUIRED)
 
 option(VULKANSCOPE_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 
+include(../unity/ffi.cmake)
+find_library(UNITY_TEST_FFI NAMES ffi libffi.so.8 REQUIRED)
+add_executable(unity_runtime_test unity_runtime_test.cpp ../unity/runtime.cpp ../unity/ffi_hook.cpp)
+target_include_directories(unity_runtime_test PRIVATE fake_gum .. ${FFI_HEADERS})
+target_link_libraries(unity_runtime_test PRIVATE Threads::Threads ${UNITY_TEST_FFI})
+
 add_executable(plugin_runtime_test runtime_test.cpp ../plugin/runtime.cpp)
 target_include_directories(plugin_runtime_test PRIVATE ..)
 target_link_libraries(plugin_runtime_test PRIVATE Threads::Threads)
@@ -123,7 +129,7 @@ add_executable(memory_scanner_test memory_scanner_test.cpp ../features/memory_sc
 target_include_directories(memory_scanner_test PRIVATE ..)
 target_link_libraries(memory_scanner_test PRIVATE Threads::Threads)
 
-foreach(test_target memory_scanner_test parallel_sampler_test manager_test navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
+foreach(test_target unity_runtime_test memory_scanner_test parallel_sampler_test manager_test navigation_touch_test navigation_inertia_test graphics_trace_test navigation_i18n_test classic_hud_test plugin_runtime_test builtin_plugins_test performance_hud_test native_monitor_test native_settings_test surface_selection_test surface_collection_test diagnostic_history_test gpu_memory_test gpu_timing_test gpu_collection_test)
     target_compile_features(${test_target} PRIVATE cxx_std_17)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

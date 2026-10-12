@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install font coverage fixtures
-        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-noto-cjk
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core fonts-noto-cjk libffi-dev
       - name: Configure host tests
         run: cmake -S app/src/main/cpp/tests -B build/plugin-tests -DCMAKE_BUILD_TYPE=Debug -DVULKANSCOPE_ENABLE_SANITIZERS=ON
       - name: Build host tests

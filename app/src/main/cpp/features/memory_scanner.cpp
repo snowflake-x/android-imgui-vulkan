@@ -1,4 +1,5 @@
 #include "features/memory_scanner.h"
+#include "vendor/nlohmann/json.hpp"
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -9,7 +10,7 @@ namespace {
 class Worker {
 public:
     explicit Worker(MemoryExecutor executor) : execute_(std::move(executor)) {}
-    ~Worker() { stop(); }
+    ~Worker() { stop(); closeRuntime(); }
     void stop() noexcept {
         cancelled_ = true;
         if (thread_.joinable()) thread_.join();
@@ -20,7 +21,15 @@ public:
     }
     bool action(const MemoryJob &job) {
         if (job.operation == "cancel") { cancelled_ = true; return true; }
-        if (!execute_ || (job.operation != "list" && job.operation != "scan" && job.operation != "unity" && job.operation != "view")) return false;
+        if (!execute_ || (job.operation != "list" && job.operation != "scan" && job.operation != "unity" && job.operation != "view" && job.operation != "runtime")) return false;
+        if (job.operation == "runtime") {
+            try {
+                const auto request = nlohmann::json::parse(job.input);
+                const auto op = request.at("op").get<std::string>();
+                const std::vector<std::string> allowed{"connect","detach","ping","assemblies","classes","members","objects","components","read","write","invoke","release","hooks","hook","unhook","readMemory","writeMemory"};
+                if (std::find(allowed.begin(), allowed.end(), op) == allowed.end()) return false;
+            } catch (...) { return false; }
+        }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (state_.busy) return false;
@@ -48,7 +57,10 @@ public:
         try {
             thread_ = std::thread([this, job] {
                 monitor::CommandResult result;
-                try { result = execute_(job, cancelled_); }
+                try {
+                    if (!runtimeSession_.empty() && (job.operation == "list" || job.pid != runtimeJob_.pid || job.start != runtimeJob_.start)) closeRuntime();
+                    result = execute_(job, cancelled_);
+                }
                 catch (const std::exception &e) { result.error = e.what(); }
                 catch (...) { result.error = "Unexpected memory worker failure"; }
                 const auto marker = result.output.rfind("MEMSCAN_DONE\n");
@@ -57,8 +69,24 @@ public:
                 std::lock_guard<std::mutex> lock(mutex_);
                 state_.busy = false;
                 state_.status = cancelled_ ? "cancelled" : complete ? "finished" : "failed";
-                if (cancelled_) { state_.report = "Cancelled"; return; }
+                if (cancelled_) {
+                    state_.report = job.operation == "runtime" ? "Runtime request stopped; a target write/call may already have executed." : "Cancelled";
+                    if (job.operation == "runtime") state_.runtimeReport = nlohmann::json{{"error", state_.report}, {"target", state_.targetIdentity}}.dump();
+                    return;
+                }
                 state_.report = complete ? result.output.substr(0, marker) : result.error + "\n" + result.output;
+                if (job.operation == "runtime") {
+                    if (complete) {
+                        try {
+                            auto response = nlohmann::json::parse(state_.report);
+                            response["target"] = std::to_string(job.pid) + ":" + std::to_string(job.start);
+                            state_.runtimeReport = response.dump();
+                            runtimeJob_ = job;
+                            runtimeSession_ = response.value("detached", false) ? "" : response.value("session", std::string());
+                            if (response.contains("error")) state_.status = "failed";
+                        } catch (...) { state_.status = "failed"; state_.runtimeReport = "{}"; }
+                    } else state_.runtimeReport = nlohmann::json{{"error", state_.report}, {"target", state_.targetIdentity}}.dump();
+                }
                 if (!complete) {
                     state_.report += "\nIncomplete helper response; do not treat this as a complete scan.";
                     return;
@@ -121,6 +149,19 @@ public:
         return true;
     }
 private:
+    /** @brief Release target hooks and GC handles when switching targets or unloading the plugin. */
+    void closeRuntime() noexcept {
+        if (runtimeSession_.empty() || !execute_) return;
+        try {
+            auto job = runtimeJob_;
+            job.input = nlohmann::json{{"op", "detach"}, {"session", runtimeSession_}}.dump();
+            std::atomic<bool> cancel{false};
+            execute_(job, cancel);
+        } catch (...) {}
+        runtimeSession_.clear();
+    }
+    MemoryJob runtimeJob_;
+    std::string runtimeSession_;
     MemoryExecutor execute_;
     std::mutex mutex_;
     MemoryState state_;

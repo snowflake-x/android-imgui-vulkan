@@ -39,6 +39,11 @@ internal fun MemoryScannerPage(
     val root = state.data.optString("rootAccess") == "granted"
     val busy = memory.optBoolean("busy")
     var target by rememberSaveable { mutableStateOf("") }
+    var inspector by rememberSaveable { mutableStateOf(false) }
+    if (inspector) {
+        UnityInspectorPage(state, change, chinese, modifier, padding, target) { inspector = false }
+        return
+    }
     var kind by rememberSaveable { mutableIntStateOf(0) }
     var query by rememberSaveable { mutableStateOf("") }
     var address by rememberSaveable { mutableStateOf("") }
@@ -99,6 +104,7 @@ internal fun MemoryScannerPage(
                         "每次原生任务最多运行 15 秒、扫描读取 512 MiB，最多显示 1,024 个匹配或导出 10,000 个类型名称。达到上限或区域不可读时会标记结果不完整。"))
                     if (!enabled) TextButton(tr("Enable plugin", "启用插件"), { change("plugin:memory-scanner", "true") }, Modifier.fillMaxWidth())
                     if (!root) TextButton(tr("Request root", "申请 Root 权限"), { change("retryRoot", "true") }, Modifier.fillMaxWidth())
+                    TextButton(tr("Open Unity Runtime Inspector", "打开 Unity 运行时 Inspector"), { inspector = true }, Modifier.fillMaxWidth(), enabled = enabled && root)
                     TextButton(tr("Refresh running app processes", "刷新正在运行的应用进程"),
                         { change("memory:list", "") }, Modifier.fillMaxWidth(), enabled = enabled && root && !busy)
                 }

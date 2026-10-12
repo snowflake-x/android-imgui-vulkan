@@ -19,3 +19,5 @@ target_include_directories(vulkanscope PRIVATE ${IMGUI} ${IMGUI}/backends)
 target_compile_definitions(vulkanscope PRIVATE VK_USE_PLATFORM_ANDROID_KHR)
 target_link_libraries(vulkanscope PRIVATE vulkanscope_plugins android log vulkan dl)
 target_link_options(vulkanscope PRIVATE "-Wl,-z,max-page-size=16384")
+
+include(unity/frida.cmake)

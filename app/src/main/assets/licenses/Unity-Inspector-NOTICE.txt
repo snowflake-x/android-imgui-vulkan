@@ -1,0 +1,19 @@
+Unity Runtime Inspector dependencies:
+Frida Core and Gum 17.2.17, wxWindows Library Licence 3.1 (LGPL exception).
+https://github.com/frida/frida-core/tree/17.2.17
+https://github.com/frida/frida-gum/tree/17.2.17
+Prebuilt official Android devkits; SHA-256 pins are in unity/frida.cmake.
+The build fetches devkits into .deps/frida; no external frida-server is required.
+
+nlohmann/json 3.12.0, MIT, source revision e8b747e4bc0b38fa86ecd0b7972bfcf4119b02a7.
+https://github.com/nlohmann/json
+
+Design references only (not copied into this implementation):
+https://github.com/PicoShot/Il2CPP-Base (runtime component/class/method browser)
+https://github.com/vfsfitvnm/frida-il2cpp-bridge (managed delegate and synchronization-context approach)
+
+libffi 3.4.4 headers, MIT, revision 10bcbcc6295e559b7c952b054e7669a912d3ce06.
+https://github.com/frida/libffi/tree/10bcbcc6295e559b7c952b054e7669a912d3ce06
+This exact dependency is pinned by Frida 17.2.17's releng revision
+2b34e1c00814fd6fcbff0b7aefeca0a6025af16a/deps.toml. Android links the devkit's
+prefixed libffi symbols; host closure tests link the system libffi ABI.

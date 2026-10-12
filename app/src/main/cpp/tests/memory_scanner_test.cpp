@@ -1,4 +1,6 @@
 #include "features/memory_scanner.h"
+#include "vendor/nlohmann/json.hpp"
+#include "unity/wire.h"
 #include "memory/inspect.h"
 #include <algorithm>
 #include <chrono>
@@ -140,6 +142,42 @@ void viewLifecycle() {
     view = run({"view", "0x2000", "256", 123, 456});
     require(view.status == "failed" && view.viewHex.empty() && view.pointers.empty());
 }
+void runtimeLifecycle() {
+    using nlohmann::json;
+    std::atomic<int> detach{0};
+    plugin::Runtime runtime;
+    RegisterMemoryScanner(runtime, [&](const MemoryJob &job, const auto &) {
+        if (job.operation == "list") return monitor::CommandResult{true, "P\t123\t456\t10123\tcom.example.game\nMEMSCAN_DONE\n", "", false};
+        auto q = json::parse(job.input);
+        if (q["op"] == "detach") { require(q["session"] == "session1"); ++detach; }
+        return monitor::CommandResult{true, "{\"session\":\"session1\",\"kind\":\"assemblies\",\"rows\":[]}\nMEMSCAN_DONE\n", "", false};
+    });
+    runtime.load("memory-scanner");
+    auto run = [&](MemoryJob job) {
+        bool accepted = false; runtime.emit(MemoryAction{job, &accepted}); require(accepted);
+        MemoryState s;
+        for (int i = 0; i < 1000; ++i) { runtime.emit(MemoryQuery{&s}); if (!s.busy) return s; std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+        throw std::runtime_error("Runtime worker timeout");
+    };
+    run({"list", "", "", 0, 0});
+    bool accepted = true;
+    runtime.emit(MemoryAction{{"runtime", "json", "{bad", 123, 456}, &accepted}); require(!accepted);
+    runtime.emit(MemoryAction{{"runtime", "json", "{\"op\":\"unknown\"}", 123, 456}, &accepted}); require(!accepted);
+    auto result = run({"runtime", "json", "{\"op\":\"connect\"}", 123, 456});
+    require(json::parse(result.runtimeReport)["target"] == "123:456");
+    run({"list", "", "", 0, 0}); require(detach == 1);
+    run({"runtime", "json", "{\"op\":\"connect\"}", 123, 456});
+    runtime.clear(); require(detach == 2);
+}
+void runtimeWire() {
+    int pair[2]; require(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    unity::Socket a(pair[0]), b(pair[1]);
+    unity::transmit(a.fd, "Unicode text / payload");
+    require(unity::receive(b.fd) == "Unicode text / payload");
+    uint32_t oversized = 512 * 1024 + 1; unity::transfer(a.fd, &oversized, 4, true);
+    bool rejected = false; try { (void)unity::receive(b.fd); } catch (...) { rejected = true; } require(rejected);
+    rejected = false; try { (void)unity::endpoint(std::string(200, 'x')); } catch (...) { rejected = true; } require(rejected);
+}
 void lifecycle() {
     plugin::Runtime runtime;
     std::atomic<int> calls{0};
@@ -187,4 +225,4 @@ void lifecycle() {
     require(state.status == "failed" && state.processes.empty());
 }
 }
-int main() { patternsAndScan(); metadata(); inspection(); viewLifecycle(); lifecycle(); }
+int main() { patternsAndScan(); metadata(); inspection(); viewLifecycle(); lifecycle(); runtimeLifecycle(); runtimeWire(); }

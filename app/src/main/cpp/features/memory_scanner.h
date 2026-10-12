@@ -12,6 +12,7 @@ struct MemoryPointer { std::string address, label; };
 struct MemoryState {
     bool busy = false;
     std::string status = "idle", report;
+    std::string runtimeReport;
     std::vector<memory::Process> processes;
     std::string viewAddress, viewHex, viewIdentity, targetIdentity;
     std::vector<std::string> matches;
